@@ -205,36 +205,45 @@ hermes config set section.key value  # 直接设置某个配置项
 #### 命令确认模式
 https://hermes-agent.nousresearch.com/docs/user-guide/configuration#smart-approvals
 
-```bash
-# manual — 每次高危操作都询问（默认）
-hermes config set approvals.mode manual
-
-# smart — 用辅助模型自动判断风险，低风险直接执行
-hermes config set approvals.mode smart
-
-# off — 跳过所有确认（等同于 --yolo）
-hermes config set approvals.mode off
+```yaml
+approvals:
+  mode: manual  # manual | smart | off
+# manual    — 每次高危操作都询问（默认）
+# smart     — 用辅助模型自动判断风险，低风险直接执行
+# off       — 跳过所有确认（等同于 --yolo）
 ```
 
 #### 上下文压缩
 https://hermes-agent.nousresearch.com/docs/user-guide/configuration#context-compression
 
-```bash
-# 调整压缩触发阈值（默认 0.50，即占用达到 50% 时触发）
-hermes config set compression.threshold 0.80
+```yaml
+compression:
+  enabled: true       # 启用/禁用压缩
+  threshold: 0.50     # 压缩触发阈值
+  target_ratio: 0.20  # 保留为未压缩尾部的阈值比例
+  protect_last_n: 20  # 最少保留不压缩的最近消息数
 ```
 
 #### 记忆配置
 https://hermes-agent.nousresearch.com/docs/user-guide/configuration#memory-configuration
 
-| `memory.memory_enabled`              | `true`    | 是否启用持久记忆               |
-| `memory.user_profile_enabled`        | `true`    | 是否启用用户档案               |
+```yaml
+memory:
+  memory_enabled: true        # 启用持久记忆
+  user_profile_enabled: true  # 启用用户档案
+  memory_char_limit: 2200     # 记忆字符上限（~800 tokens）
+  user_char_limit: 1375       # 用户档案字符上限（~500 tokens）
+```
 
-#### 子 Agent 行为
+#### 子Agent行为
 https://hermes-agent.nousresearch.com/docs/user-guide/configuration#delegation
 
-| `delegation.max_concurrent_children` | `3`       | 并行子代理数量上限             |
-| `delegation.max_spawn_depth`         | `1`       | 子代理嵌套深度上限             |
+```yaml
+delegation:
+  max_concurrent_children: 3  # 每个批次并行运行的最大子Agent数量
+  max_spawn_depth: 1          # 最大子Agent嵌套深度
+  orchestrator_enabled: true  # 可否生成 Orchestrator 子Agent，为 false 时只能生成叶子Agent
+```
 
 ## 8. Toolset（工具箱）
 Hermes 的工具按功能分组为「工具箱」（Toolsets）。你可以按需启用或禁用以控制代理的能力范围。

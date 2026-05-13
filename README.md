@@ -1096,42 +1096,23 @@ hermes gateway status --system
 ## 13.2 网关配对
 默认情况下，网关会拒绝所有不在允许列表中或未通过私信配对的用户。
 
-这是安全默认值：Gateway 背后的 Agent 可能拥有终端、文件、浏览器、MCP 等工具权限，不应该让任意聊天用户直接访问。
-
-**方式一：配置允许列表**
-
-推荐显式写入可信用户 ID：
-
-这些配置通常写在 `~/.hermes/.env` 中。
+### 13.2.1 允许列表
+在 `~/.hermes/.env` 中配置允许列表，显式写入可信用户 ID：
 
 ```bash
 # 按平台限制用户
 TELEGRAM_ALLOWED_USERS=123456789,987654321
-DISCORD_ALLOWED_USERS=123456789012345678
-SIGNAL_ALLOWED_USERS=+155****4567,+155****6543
-SMS_ALLOWED_USERS=+155****4567,+155****6543
-EMAIL_ALLOWED_USERS=trusted@example.com,colleague@work.com
-MATTERMOST_ALLOWED_USERS=3uo8dkh1p7g1mfk49ear5fzs5c
-MATRIX_ALLOWED_USERS=@alice:matrix.org
-DINGTALK_ALLOWED_USERS=user-id-1
-FEISHU_ALLOWED_USERS=ou_xxxxxxxx,ou_yyyyyyyy
-WECOM_ALLOWED_USERS=user-id-1,user-id-2
-WECOM_CALLBACK_ALLOWED_USERS=user-id-1,user-id-2
-TEAMS_ALLOWED_USERS=aad-object-id-1,aad-object-id-2
+WEIXIN_ALLOWED_USERS=123456789,987654321
 
 # 或配置通用允许列表
 GATEWAY_ALLOWED_USERS=123456789,987654321
-```
 
-也可以显式允许所有用户，但不推荐给有终端访问权限的 bot 使用：
-
-```bash
+# 显式允许所有用户，但不推荐给有终端访问权限的 bot 使用
 GATEWAY_ALLOW_ALL_USERS=true
 ```
 
-**方式二：私信配对**
-
-如果不想手动查用户 ID，未知用户私信 bot 时会收到一次性配对码：
+### 13.2.2 私信配对
+无需手动配置用户 ID，未知用户在私信机器人时会收到一次性配对码：
 
 ```text
 Pairing code: XKGH5N7P
@@ -1140,21 +1121,21 @@ Pairing code: XKGH5N7P
 管理员在本机批准：
 
 ```bash
+# 批准配对
 hermes pairing approve telegram XKGH5N7P
-```
 
-其他配对命令：
-
-```bash
+# 查看配对列表
 hermes pairing list
-hermes pairing revoke telegram 123456789
+
+# 撤销配对
+hermes pairing revoke telegram <user_id>
 ```
 
 配对码 1 小时后过期，有速率限制，并使用加密随机数生成。
 
-**斜杠命令权限控制**
+### 13.2.3 斜杠命令权限控制
 
-用户通过允许列表或配对后，还可以继续分成 admin 和普通 user。admin 可以运行所有斜杠命令；普通 user 只能运行显式允许的命令，以及始终允许的 `/help` 和 `/whoami`。
+用户通过允许列表或配对后，可以分成管理员和普通用户；如果当前平台/作用域未配置 `allow_admin_from`（包括没有对应的 gateway 平台配置），则默认不区分，所有已允许用户都可以运行斜杠命令。配置后，管理员可以运行所有斜杠命令；普通用户只能运行显式允许的命令，以及始终允许的 `/help` 和 `/whoami`。
 
 示例配置：
 
@@ -1163,19 +1144,12 @@ gateway:
   platforms:
     discord:
       extra:
-        allow_from: ["111", "222", "333"]
-        allow_admin_from: ["111"]
-        user_allowed_commands: [status, model]
+        allow_from: ["111", "222", "333"]       # 允许使用的用户
+        allow_admin_from: ["111"]               # 管理员用户
+        user_allowed_commands: [status, model]  # 非管理员可运行的命令
         group_allow_admin_from: ["111"]
         group_user_allowed_commands: [status]
 ```
-
-注意：
-
-- 普通聊天不受斜杠命令权限影响，非 admin 用户仍然可以正常和 Agent 对话
-- 私信里的 admin 身份不会自动继承到群组 / 频道，每个 scope 都有自己的权限列表
-- 如果某个 scope 没有设置 `allow_admin_from`，该 scope 会保持向后兼容，不启用斜杠命令分级
-- 可以在消息平台里发送 `/whoami` 查看自己当前是 admin、user 还是 unrestricted，以及能运行哪些命令
 
 # 14. Profile
 https://hermes-agent.nousresearch.com/docs/user-guide/profiles

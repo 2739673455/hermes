@@ -1107,7 +1107,7 @@ WEIXIN_ALLOWED_USERS=123456789,987654321
 # 或配置通用允许列表
 GATEWAY_ALLOWED_USERS=123456789,987654321
 
-# 显式允许所有用户，但不推荐给有终端访问权限的 bot 使用
+# 显式允许所有用户，但不推荐给有终端访问权限的机器人使用
 GATEWAY_ALLOW_ALL_USERS=true
 ```
 
@@ -1154,9 +1154,9 @@ gateway:
 # 14. Profile
 https://hermes-agent.nousresearch.com/docs/user-guide/profiles
 
-通过 Profile 运行多个独立的 Hermes 实例，各自有独立的配置、会话、技能和记忆。
+通过 Profile 运行多个独立的 Hermes Agent，每个 Agent 有独立的配置、会话、技能和记忆。
 
-## 14.1 为什么用 Profile？
+## 14.1 什么是 Profile
 - **工作/个人分离** — 不同的 API key、模型、技能集
 - **项目隔离** — 每个项目有自己的配置和环境
 - **团队协作** — 不同的角色使用不同的工具集

@@ -1529,4 +1529,8 @@ https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
 
 Hermes Kanban 是一个持久的任务板，跨所有 Hermes Profile 共享，让多个命名 Agent 协作工作。每个任务都是 `~/.hermes/kanban.db` 中的一行；每次交接都是任何人都可以读取和写入的一行；每个工作者都是一个完整的操作系统进程，拥有自己的身份。
 
-## 17.1 
+## 17.1 什么是 Kanban
+
+## 17.2 核心概念
+
+## 17.3 

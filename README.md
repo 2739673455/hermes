@@ -1445,8 +1445,9 @@ hermes cron create "every 1d at 09:00" "审查打开的 PR，总结 CI 健康状
 
 Cron 表达式格式为 `分 时 日 月 周`，例如：
 
-- `0 9 * * *` 表示每天 9:00 执行
-- `0 9 * * 1-5` 表示工作日每天 9:00 执行
+- `0 9 * * *` 每天 9:00 执行
+- `0 9 * * 1-5` 工作日每天 9:00 执行
+- `0 */6 * * *` 每 6 小时执行
 - `30 8 1 * *` 每月 1 日 8:30 执行
 
 ## 15.3 管理任务
@@ -1681,360 +1682,197 @@ delegation:
 ```
 
 # 17. Kanban
-https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
+- https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
+- https://github.com/NousResearch/hermes-agent/blob/main/docs/hermes-kanban-v1-spec.pdf
 
-Hermes Kanban 是一个多智能体协作的持久化任务看板系统。
+Hermes Kanban 是一个多 Agent 协作层：它是一个可恢复、可审计、可被人类中途介入的工作队列。它把任务、依赖、评论、运行记录和工作目录放进一个持久任务板里，让多个 profile 以异步方式协作。
 
-## 17.1 什么是 Kanban
-Kanban 不是 `delegate_task` 的替代语法，而是另一种协作原语：
+## 17.1 为什么需要 Kanban
 
-| 对比项     | `delegate_task`            | Kanban                                   |
-| ---------- | -------------------------- | ---------------------------------------- |
-| 形态       | 一次 RPC 调用，分叉 → 合并 | 持久任务队列 + 状态机                    |
-| 父 Agent   | 等子 Agent 返回后继续      | 创建任务后可放手让队列调度               |
-| 子任务身份 | 匿名 subagent              | 具名 profile，带自己的持久记忆           |
-| 可恢复性   | 失败就结束                 | block → unblock → 重新运行；crash 可回收 |
-| 人类介入   | 不支持                     | 随时 comment / unblock                   |
-| 审计轨迹   | 可能被上下文压缩抹掉       | SQLite 中持久保存                        |
-| 协作关系   | 层级：调用者 → 被调用者    | 对等：任意 profile / 人都能读写任务      |
-
-一句话区分：`delegate_task` 是函数调用；Kanban 是工作队列，每次交接都落成一行，任何 profile 或人类都能查看和编辑。
-
-适合用 `delegate_task` 的场景：
-
-- 父 Agent 需要一个短答案才能继续
-- 不需要人类介入
-- 子任务结果只需要回到父 Agent 当前上下文
-
-适合用 Kanban 的场景：
-
-- 工作跨 profile、跨角色或跨时间
-- 任务需要跨重启保留
-- 可能需要人类补充信息或审核
-- 失败后需要重新派发、重试、追踪历史
-- 结果可追溯
-
-## 17.2 核心概念
-Kanban 的核心对象：
-
-- **Board**：一个独立任务队列，有自己的 SQLite DB、workspace 目录和 dispatcher loop。默认 board 叫 `default`，旧兼容路径是 `~/.hermes/kanban.db`。
-- **Task**：任务行。包含 title、body、assignee、status、tenant、priority、idempotency key 等。常见状态是 `triage | todo | ready | running | blocked | done | archived`。
-- **Link**：父子依赖。父任务完成后，dispatcher 会把满足依赖的子任务从 `todo` 推进到 `ready`。
-- **Comment**：人和 Agent 之间的持久沟通协议。worker 重新启动时会通过 `kanban_show()` 读到完整 comment thread。
-- **Run**：一次任务尝试。一个 task 可以有多次 run，例如第一次 blocked，第二次 completed。
-- **Workspace**：worker 实际工作的目录。
-  - `scratch`：默认，新建临时目录
-  - `dir:<abs-path>`：已有绝对路径目录，例如 vault、项目目录、租户目录
-  - `worktree`：用于代码任务的 git worktree
-- **Dispatcher**：长驻调度循环，默认在 Gateway 内运行。它定期提升 ready 任务、认领任务、启动 assignee profile、回收 stale/crashed worker。
-- **Tenant**：board 内的软命名空间，例如 `--tenant content-ops`。tenant 是筛选和分组；board 才是硬隔离边界。
-
-多 board 用于隔离不同项目、仓库或业务域：
-
-```bash
-hermes kanban boards list
-hermes kanban boards create atm10-server \
-  --name "ATM10 Server" \
-  --description "Minecraft modded server ops" \
-  --switch
-
-hermes kanban --board atm10-server list
-hermes kanban boards switch atm10-server
-hermes kanban boards show
-```
-
-board 解析顺序：
-
-1. CLI 显式 `--board <slug>`
-2. `HERMES_KANBAN_BOARD`
-3. `~/.hermes/kanban/current`
-4. `default`
-
-worker 由 dispatcher 启动时会带上 `HERMES_KANBAN_BOARD`，因此只能看到自己所属 board 的任务。
-
-## 17.3 快速开始
-人类通过 CLI、Slash 命令或 Dashboard 创建和观察任务；worker profile 被 dispatcher 拉起后，通过 `kanban_*` 工具读写任务，不会在 shell 里运行 `hermes kanban`。
-
-```bash
-# 1. 初始化任务板；首次 hermes kanban 命令也会自动初始化
-hermes kanban init
-
-# 2. 启动 Gateway；默认内置 dispatcher
-hermes gateway start
-
-# 3. 创建任务，分配给某个 profile
-hermes kanban create "research AI funding landscape" --assignee researcher
-
-# 4. 实时观察事件
-hermes kanban watch
-
-# 5. 查看列表和统计
-hermes kanban list
-hermes kanban stats
-```
-
-创建任务后，下一次 dispatcher tick 会启动 `researcher` profile。worker 的第一步通常是调用：
-
-```text
-kanban_show()
-```
-
-它读取当前任务 title、body、parent handoff、prior attempts、comments 和完整 `worker_context`。worker 不需要运行 `hermes kanban show <id>`。
-
-## 17.4 人类操作入口
-CLI、Slash 命令和 Dashboard 都写同一个 `kanban_db` 层，因此状态一致。
-
-常用 CLI：
-
-```bash
-hermes kanban create "<title>" --body "..." --assignee <profile>
-hermes kanban list [--mine] [--assignee P] [--status S] [--tenant T] [--archived]
-hermes kanban show <id>
-hermes kanban assign <id> <profile>
-hermes kanban link <parent_id> <child_id>
-hermes kanban comment <id> "<text>" --author <name>
-hermes kanban complete <id> --result "..."
-hermes kanban block <id> "need input"
-hermes kanban unblock <id>
-hermes kanban archive <id>
-hermes kanban tail <id>
-hermes kanban runs <id>
-hermes kanban context <id>
-hermes kanban specify <id>
-```
-
-`/kanban` Slash 命令复用同一套参数：
-
-```text
-/kanban list
-/kanban show t_abcd
-/kanban create "write launch post" --assignee writer --parent t_research
-/kanban comment t_abcd "use the 2026 schema, not 2025"
-/kanban unblock t_abcd
-/kanban specify t_abcd
-```
-
-Gateway 里 `/kanban` 可以在 Agent 正在运行时立即执行，因为它操作的是 `~/.hermes/kanban.db`，不是当前对话状态。典型用途：
-
-- worker blocked 后，你从手机发 `/kanban unblock t_abcd`
-- 给任务补充上下文：`/kanban comment t_xyz "use the 2026 schema"`
-- 不打断 orchestrator，直接查看 `/kanban stats` 或 `/kanban list`
-
-Dashboard：
-
-- `hermes dashboard` 后进入 Kanban tab
-- 顶部可搜索、按 tenant/assignee 过滤、切换是否显示 archived
-- `Lanes by profile` 会把 In Progress 按 profile 分组
-- `Nudge dispatcher` 可以立即触发一次 dispatch tick
-- 点击卡片可看 task drawer、run history、comments、metadata
-
-## 17.5 Worker 如何工作
-dispatcher 启动 worker 时会设置：
-
-```text
-HERMES_KANBAN_TASK=<task_id>
-HERMES_KANBAN_WORKSPACE=<workspace_path>
-HERMES_KANBAN_BOARD=<board_slug>
-```
-
-这些环境变量会让 worker schema 中出现 `kanban_*` 工具。普通 `hermes chat` 会话没有这些工具，避免工具 schema 膨胀。
-
-常用 worker 工具：
-
-| 工具               | 用途                                                   |
-| ------------------ | ------------------------------------------------------ |
-| `kanban_show`      | 读取当前任务、parent handoff、comments、worker_context |
-| `kanban_list`      | 列出任务摘要，主要给 orchestrator 查找 board 工作      |
-| `kanban_complete`  | 完成任务，写入 `summary` 和 `metadata`                 |
-| `kanban_block`     | 阻塞任务，写入需要人类/上游补充的原因                  |
-| `kanban_heartbeat` | 长任务中报告存活状态                                   |
-| `kanban_comment`   | 给任务追加持久评论                                     |
-| `kanban_create`    | orchestrator 创建子任务                                |
-| `kanban_link`      | orchestrator 添加 parent → child 依赖                  |
-| `kanban_unblock`   | orchestrator 或人类把 blocked 任务重新放回 ready       |
-
-典型 worker 工具调用顺序：
-
-```text
-kanban_show()
-# 读取 worker_context 后，使用 terminal/file/web 等工具完成任务
-kanban_heartbeat(note="halfway through")
-kanban_complete(
-    summary="migrated limiter.py to token-bucket; added 14 tests, all pass",
-    metadata={
-        "changed_files": ["limiter.py", "tests/test_limiter.py"],
-        "verification": ["pytest tests/test_limiter.py -q"],
-        "residual_risk": []
-    },
-)
-```
-
-如果卡住：
-
-```text
-kanban_block(reason="Need production DB URL before validating migration")
-```
-
-`kanban-worker` 是内置 Skill，dispatcher 启动 worker 时会自动传入。它教 worker 用工具完成生命周期，而不是运行 CLI。
-
-可以检查或恢复：
-
-```bash
-hermes -p <worker-profile> skills list | grep kanban-worker
-hermes -p <worker-profile> skills reset kanban-worker --restore
-```
-
-## 17.6 结构化交接
-`kanban_complete(summary=..., metadata={...})` 是 Kanban 的关键。`summary` 给人读，`metadata` 给后续 Agent、reviewer 和 Dashboard 复用。
-
-工程类任务建议 metadata 形状：
-
-```json
-{
-  "changed_files": ["path/to/file.py"],
-  "verification": ["pytest tests/hermes_cli/test_kanban_db.py -q"],
-  "dependencies": ["parent task id or external issue, if any"],
-  "blocked_reason": null,
-  "retry_notes": "what failed before, if this was a retry",
-  "residual_risk": ["what was not tested or still needs human review"]
-}
-```
-
-原则：
-
-- 写清楚改了什么
-- 写清楚如何验证
-- 写清楚失败后如何 unblock 或 retry
-- 写清楚剩余风险
-- 不要把 secrets、raw logs、tokens、OAuth 内容或无关 transcript 放进 `metadata`
-
-## 17.7 教程中的四种典型工作流
-Kanban tutorial 用四个故事展示典型用法。
-
-### 17.7.1 Solo dev shipping a feature
-一个开发任务拆成 schema → API → tests 三段，通过 parent dependency 串起来：
-
-```bash
-SCHEMA=$(hermes kanban create "Design auth schema" \
-  --assignee backend-dev --tenant auth-project --priority 2 \
-  --body "Design the user/session/token schema for the auth module." \
-  --json | jq -r .id)
-
-API=$(hermes kanban create "Implement auth API endpoints" \
-  --assignee backend-dev --tenant auth-project --priority 2 \
-  --parent $SCHEMA \
-  --body "POST /register, POST /login, POST /refresh, POST /logout." \
-  --json | jq -r .id)
-
-hermes kanban create "Write auth integration tests" \
-  --assignee qa-dev --tenant auth-project --priority 2 \
-  --parent $API \
-  --body "Cover happy path, wrong password, expired token, concurrent refresh."
-```
-
-只有 `SCHEMA` 一开始是 `ready`；`API` 和 tests 在 `todo` 等父任务完成。`SCHEMA` 完成后，它的 summary + metadata 会进入 `API` 的 `worker_context`，后续 worker 不用重新读长文档。
-
-### 17.7.2 Fleet farming
-多个独立任务分配给不同 specialist profile，让 dispatcher 并行清理队列：
-
-```bash
-for lang in Spanish French German; do
-  hermes kanban create "Translate homepage to $lang" \
-    --assignee translator --tenant content-ops
-done
-
-for i in 1 2 3 4 5; do
-  hermes kanban create "Transcribe Q3 customer call #$i" \
-    --assignee transcriber --tenant content-ops
-done
-
-for sku in 1001 1002 1003 1004; do
-  hermes kanban create "Generate product description: SKU-$sku" \
-    --assignee copywriter --tenant content-ops
-done
-```
-
-Dashboard 开启 `Lanes by profile` 后，可以看到每个 profile 当前在跑什么。适合翻译、转录、批量内容生成、批量账号运营、服务巡检等队列型工作。
-
-### 17.7.3 Role pipeline with retry
-PM 写 spec，engineer 实现，reviewer 审查。第一次实现被 review 阻塞，人类或 reviewer 补充意见后 unblock，同一个 task 生成第二次 run：
-
-```text
-kanban_show()
-kanban_block(
-    reason="Review: password strength check missing, reset link is not single-use"
-)
-```
-
-然后：
-
-```bash
-hermes kanban unblock $IMPL
-# 或在聊天里：
-/kanban unblock $IMPL
-```
-
-第二次 worker 启动时，`kanban_show()` 会把第一次 run 的 block reason 放进 `worker_context`，worker 可以针对反馈修复，而不是从头理解任务。完成后 `task_runs` 中保留 blocked 和 completed 两次尝试。
-
-### 17.7.4 Circuit breaker and crash recovery
-真实 worker 会失败。Kanban 有两层保护：
-
-- **Circuit breaker**：同一任务连续启动失败达到 `kanban.failure_limit` 后自动 block，避免无限重试。
-- **Crash recovery**：worker PID 消失或 claim stale 后，dispatcher 回收 claim，把任务重新放回 `ready`，下个 tick 再派发。
-
-查看尝试历史：
-
-```bash
-hermes kanban runs t_ef5d
-```
-
-典型结果会显示 `spawn_failed`、`gave_up`、`crashed`、`completed` 等 outcome。Gateway 接入 Telegram / Discord / Slack 等平台时，终态事件也可以通知到原始聊天。
-
-## 17.8 配置与注意事项
-dispatcher 默认在 Gateway 内运行：
-
-```yaml
-# ~/.hermes/config.yaml
-kanban:
-  dispatch_in_gateway: true
-  dispatch_interval_seconds: 60
-  failure_limit: 2
-```
-
-如果 Gateway 没运行，`ready` 任务会停在那里，直到 Gateway 启动或手动 dispatch：
-
-```bash
-hermes kanban dispatch --dry-run
-hermes kanban dispatch --max 3
-```
-
-`hermes kanban daemon` 独立守护进程已不推荐；默认使用 `hermes gateway start` 承载 dispatcher。不要同时运行 Gateway 内置 dispatcher 和 standalone daemon 指向同一个 `kanban.db`，会产生认领竞争。
-
-自动化/webhook 创建任务时使用 idempotency key，避免重复任务：
-
-```bash
-hermes kanban create "nightly ops review" \
-  --assignee ops \
-  --idempotency-key "nightly-ops-$(date -u +%Y-%m-%d)" \
-  --json
-```
-
-triage 任务可以先写一句粗略想法，再用 specifier 扩成正式任务：
-
-```bash
-hermes kanban specify <id>
-hermes kanban specify --all --tenant engineering
-```
-
-Dashboard 安全边界：
-
-- Kanban dashboard/plugin 默认面向本机使用
-- 如果用 `hermes dashboard --host 0.0.0.0` 暴露到网络，Kanban API 也会暴露任务内容、comments、workspace paths 和写操作能力
-- 不要在共享主机或不可信网络上这样暴露
-
-单机边界：
-
-- Kanban 设计为单机使用（single-host）
-- `~/.hermes/kanban.db` 是本地 SQLite
-- dispatcher 假设 worker PID 是本机进程
-- 多主机共享同一个 board 不受支持；需要多主机时，应每台机器独立 board，再用消息队列或其它协调层桥接
+### 17.1.1 `delegate_task` 的不足
+
+delegate_task当前实现
+
+### 17.1.3 其他的设计方案
+
+### 17.1.1 Cline Kanban：board + links + workspaces
+
+### 17.1.2 Paperclip：persistent identity + atomic checkout
+
+### 17.1.3 NanoClaw：为什么拒绝 in-process subagent swarms
+
+### 17.1.4 Gemini Enterprise / Gemini CLI：profile artifacts 与 @mention delegation
+
+### 17.1.5 Hermes 的取舍：小 kernel，复杂策略放到 profile / skill / plugin
+
+## 17.2 架构
+
+### 17.3.1 Control Plane：CLI / Gateway / Dashboard
+
+### 17.3.2 State Plane：SQLite board + dispatcher
+
+### 17.3.3 Execution Plane：独立 profile worker
+
+### 17.3.4 Critical invariant：不做进程内 subagent swarm
+
+## 17.4 Data Model：数据模型
+
+### 17.4.1 `tasks`
+
+### 17.4.2 `task_links`
+
+### 17.4.3 `task_comments`
+
+### 17.4.4 `task_events` / `task_runs`
+
+### 17.4.5 Status 状态机
+
+### 17.4.6 Workspace kinds
+
+## 17.5 Collaboration Patterns：协作模式
+
+### 17.5.1 P1 Fan-out
+
+### 17.5.2 P2 Pipeline
+
+### 17.5.3 P3 Voting / Quorum
+
+### 17.5.4 P4 Long-running journal
+
+### 17.5.5 P5 Human-in-the-loop triage
+
+### 17.5.6 P6 @mention delegation
+
+### 17.5.7 P7 Thread-scoped workspace
+
+### 17.5.8 P8 Fleet farming
+
+## 17.6 The Orchestrator Profile：编排者 profile
+
+### 17.6.1 Orchestrator 是 control room，不是 worker
+
+### 17.6.2 三个属性：禁用执行工具、加载 skill、遵守 specialist roster
+
+### 17.6.3 为什么 orchestrator 不是 kernel role
+
+### 17.6.4 当前使用方式：直接聊天或作为 Kanban 总任务 assignee
+
+## 17.7 Multi-Tenant Context：多租户上下文
+
+### 17.7.1 `tenant` 是 namespace，不是新实体
+
+### 17.7.2 workspace、memory、board view、audit 的隔离方式
+
+### 17.7.3 一个 specialist fleet 服务多个业务上下文
+
+### 17.7.4 不做 tenant 级 ACL、跨 tenant 依赖、tenant-scoped profiles
+
+## 17.8 Worked Example：50-account social media fleet
+
+### 17.8.1 Setup：一个 specialist profile + 多个 workspace
+
+### 17.8.2 Per-tick task generation
+
+### 17.8.3 Dispatcher 并行 claim 和 spawn
+
+### 17.8.4 为什么这个模型干净
+
+## 17.9 User Stories：典型故事
+
+### 17.9.1 Research triage and synthesis
+
+### 17.9.2 Scheduled recurring workflow
+
+### 17.9.3 Digital-twin / persistent assistant role
+
+### 17.9.4 Coding pipeline
+
+### 17.9.5 这些故事共同需要什么
+
+## 17.10 Kanban vs `delegate_task`
+
+### 17.10.1 一句话区别
+
+### 17.10.2 维度对比
+
+### 17.10.3 何时用 `delegate_task`
+
+### 17.10.4 何时用 Kanban
+
+### 17.10.5 两者如何共存
+
+## 17.11 Assignment Semantics：任务归属语义
+
+### 17.11.1 一个 task 只有一个 assignee
+
+### 17.11.2 谁可以创建任务
+
+### 17.11.3 planner / router 只是约定，不是结构角色
+
+### 17.11.4 worker 能看到什么上下文
+
+### 17.11.5 v1 不支持什么
+
+## 17.12 Dispatcher Design：调度器设计
+
+### 17.12.1 Dispatcher 故意很笨
+
+### 17.12.2 四个动作：recompute ready、atomic claim、spawn worker、stale recovery
+
+### 17.12.3 SQLite 并发正确性
+
+### 17.12.4 当前实现：Gateway 内置 dispatcher
+
+### 17.12.5 失败、重试和 circuit breaker
+
+## 17.13 CLI / Gateway / Dashboard：当前操作入口
+
+### 17.13.1 CLI command surface
+
+### 17.13.2 `/kanban` Slash command
+
+### 17.13.3 Dashboard Kanban tab
+
+### 17.13.4 自动化：cron、webhook、idempotency key
+
+## 17.14 Worker Tool Surface：当前 `kanban_*` 工具
+
+### 17.14.1 为什么 worker 不用 CLI
+
+### 17.14.2 worker 启动环境变量
+
+### 17.14.3 lifecycle 工具：show / heartbeat / complete / block / comment
+
+### 17.14.4 orchestrator 工具：list / create / link / unblock
+
+### 17.14.5 结构化 handoff：summary + metadata
+
+## 17.15 Scope Boundaries：什么不属于 kernel
+
+### 17.15.1 Smart routing / auto-assignment
+
+### 17.15.2 Org chart / hierarchy
+
+### 17.15.3 Budgets、approval gates、governance control plane
+
+### 17.15.4 Fleet management dashboard
+
+## 17.16 Risks / Tradeoffs / Open Questions
+
+### 17.16.1 SQLite cross-process contention
+
+### 17.16.2 Stale workspace buildup
+
+### 17.16.3 Profile misconfiguration
+
+### 17.16.4 Polling over events
+
+### 17.16.5 Cron 与 Kanban 的边界
+
+## 17.17 Current Implementation Notes：PDF 与当前实现的差异
+
+### 17.17.1 PDF 是设计稿，当前实现已经加入 toolset
+
+### 17.17.2 当前实现已有 multi-board、runs、Dashboard、specifier
+
+### 17.17.3 当前仍需以官方文档和源码为准

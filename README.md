@@ -1685,194 +1685,265 @@ delegation:
 - https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
 - https://github.com/NousResearch/hermes-agent/blob/main/docs/hermes-kanban-v1-spec.pdf
 
-Hermes Kanban 是一个多 Agent 协作层：它是一个可恢复、可审计、可被人类中途介入的工作队列。它把任务、依赖、评论、运行记录和工作目录放进一个持久任务板里，让多个 profile 以异步方式协作。
+Hermes Kanban 是一个多 Agent 协作层：它是一个可恢复、可审计、可中途介入的工作队列。它把任务、依赖、评论、运行记录和工作目录放进一个持久任务板里，让多个具名 profile 以异步方式协作。
 
 ## 17.1 为什么需要 Kanban
+Hermes 已经有多 Agent 能力，但原有核心原语是 `delegate_task`：父 Agent 同步启动一个短生命周期子 Agent，等待它返回结果。这种模型适合短的、自包含的推理子任务；但当工作需要跨时间、跨角色、跨重启，或者需要人类中途插手时，`delegate_task` 的函数调用模型就不够了。
 
-### 17.1.1 `delegate_task` 的不足
+Kanban 的设计出发点是：把协作状态放到一个 Hermes 可控的持久层里，而不是放在某个父 Agent 的上下文窗口或第三方 SDK 的进程内生命周期里。任务、依赖、评论、运行结果和失败恢复都落到任务板上；每个执行者都是具名 profile，拥有自己的 `HERMES_HOME`、记忆、技能和工作目录。
 
-delegate_task当前实现
+### 17.1.1 `delegate_task` 的短板
+#### 17.1.1.1 `delegate_task` 的当前实现
+`delegate_task` 是同步“分叉并汇合”（fork-and-join）调用。父 Agent 构造一个 `goal` 和可选 `context`，启动一个隔离会话里的子 Agent，然后阻塞等待子 Agent 返回摘要。子 Agent 完成后，它的详细过程不会作为一个可继续协作的对象留在系统里；父 Agent 只拿到结构化摘要，并把这个摘要放回当前上下文继续推理。
 
-### 17.1.3 其他的设计方案
+这对“父 Agent 现在需要一个短答案才能继续”的场景是够用的。例如：
 
-### 17.1.1 Cline Kanban：board + links + workspaces
+- 并行查几个资料点，然后汇总给父 Agent
+- 检查一段代码变更是否有明显风险
+- 跑一组局部验证命令并返回结果
+- 对一个独立问题做短时间分析
 
-### 17.1.2 Paperclip：persistent identity + atomic checkout
+这些任务的共同点是：
 
-### 17.1.3 NanoClaw：为什么拒绝 in-process subagent swarms
+- 结果只需要回到父 Agent
+- 不需要人类中途评论
+- 失败时由父 Agent 重新发起
+- 任务本身不需要成为长期可见、可恢复、可审计的对象
 
-### 17.1.4 Gemini Enterprise / Gemini CLI：profile artifacts 与 @mention delegation
+#### 17.1.1.2 `delegate_task` 无法覆盖的场景
+`delegate_task` 无法覆盖如下场景：
 
-### 17.1.5 Hermes 的取舍：小 kernel，复杂策略放到 profile / skill / plugin
+1. **研究分流与综合（Research triage and synthesis）**：多个专家型 Agent 并行产出候选发现，一个或多个审查者选择、合并，人类还可能中途纠正方向。
+2. **定时循环工作流（Scheduled recurring workflows）**：日报、周报、小时级收件箱分流等任务会跨运行积累知识，并且要能从单次失败中恢复。
+3. **数字分身 / 持久助手角色（Digital-twin / persistent assistant roles）**：具名、长期存在的 Agent 身份会在数周或数月里积累对人、偏好和上下文的记忆。
+4. **端到端工程流水线（End-to-end engineering pipelines）**：拆解、并行实现、审查、迭代、提交，整个流程可能持续数小时，并需要保留每个贡献者的身份和交接记录。
+
+这些场景都需要同几类能力：
+
+- 跨运行持久状态
+- 工作进行中的可见性
+- 不同技能 Agent 之间的交接
+- 人类或对等 Agent 随时介入
+ 
+### 17.1.2 其他系统的设计方案
+#### 17.1.2.1 Cline Kanban
+Cline Kanban 的形态是本地任务板：一个任务是一张卡片，每张卡片对应一个临时 git 工作树，并可以分配给不同命令行 Agent。卡片可以连成依赖链，父任务完成后子任务自动启动。
+
+它的启发是：**任务板 + 依赖链接 + 工作目录** 本身就足以构成一个很有用的协调层。它没有账号系统、服务器基础设施、复杂治理，也不强调长期 Agent 身份。这个模型简单有效，但偏代码任务：git 工作树是核心假设，非代码工作和长期身份不是主要目标。
+
+#### 17.1.2.2 Paperclip
+Paperclip 把 Agent 建模成公司里的“员工”：有组织结构图、预算、治理、目标任务图、心跳、执行记录和每 Agent 的 API key 轮换。它强调持久 Agent 身份和原子任务认领，Agent 运行时也可以是 OpenClaw、Claude Code、Codex、Cursor、bash 或 HTTP。
+
+它的启发是：长期协作需要持久身份、原子认领和可恢复任务。但它也展示了另一端的复杂度：预算、审批、治理、组织架构对企业场景有价值，但不一定应该进入 Hermes 的协作内核。对多数本地用户来说，这些更适合做成 profile 约定或插件。
+
+#### 17.1.2.3 NanoClaw Agent Swarms
+NanoClaw Agent Swarms 试图基于 Claude Agent SDK 的进程内子 Agent 团队做协作，但在非交互式 SDK / 容器模式下，子 Agent 会随着团队负责人的回合结束而被静默终止，表面看起来成功，实际没有产出文件。
+
+它给 Hermes Kanban 的教训很直接：不要把协作生命周期绑定在外部 SDK 的进程内子 Agent 语义上。协调层必须在 Hermes 自己控制的层里；工作者应该是操作系统进程，失败、崩溃或主机重启后可以通过任务板和认领机制恢复。
+
+#### 17.1.2.4 三者比较分析
+| 维度     | Cline Kanban              | Paperclip               | NanoClaw Swarms          |
+| -------- | ------------------------- | ----------------------- | ------------------------ |
+| 形态     | 本地任务板                | 服务器 + UI + 公司模型  | SDK 进程内团队           |
+| 任务粒度 | 一张卡片一个 git 工作树   | 目标 → 项目 → issue     | 团队负责人 fork 子 Agent |
+| 身份     | 卡片级匿名执行            | 持久“员工”              | 每次启动都是匿名         |
+| 持久性   | DB + git 工作树           | 中央服务器 DB           | 绑定 `query()` 生命周期  |
+| 依赖     | 已链接卡片                | issue 链接 / 阻塞关系   | 没有明确依赖模型         |
+| 治理     | 基本没有                  | 预算、审批、审计日志    | 基本没有                 |
+| 失败模式 | 崩溃工作者留下 git 工作树 | 崩溃 Agent 变成孤儿任务 | 子 Agent 静默终止        |
+| 协调介质 | git + 卡片状态            | DB + 心跳 + tickets     | SDK 消息传递             |
+
+Cline 的简单任务板形态是有效的，但偏代码任务；Paperclip 的持久身份和原子认领很有价值，但企业治理过重；NanoClaw 说明进程内群体协作对上游生命周期太敏感。Hermes Kanban 取它们的交集：任务板、依赖链接、工作目录、持久身份、原子认领；同时避免企业治理内核化和 SDK 群体协作脆弱性。
+
+#### 17.1.2.5 Google Gemini Enterprise
+Google 把 Agent Designer、子 Agent 定义、调度、连接器、治理控制面等能力放在一个更完整的平台里。Gemini CLI 的子 Agent 可以用 Markdown + YAML 定义并放进代码库，用户可以通过 `@agent-name` 显式调用，也可以让编排者自动路由。
+
+对 Hermes 来说，有两点值得吸收：
+
+- profile / 子 Agent 应该能以文件或模板形式版本化、共享、安装
+- `@name` 这种显式跨 Agent 委派语法有很好的交互潜力
+
+### 17.1.3 Hermes Kanban 的设计理念
+Hermes Kanban 的设计理念可以概括为几个取舍：
+
+- 采用 Cline 的任务板 + 依赖链接 + 工作目录形态
+- 采用 Paperclip 的原子认领和持久身份，但把身份映射到 Hermes profile
+- 拒绝 NanoClaw 式进程内子 Agent 群体协作，每个工作者都是完整操作系统进程
+- 吸收 Gemini 的可移植 profile 工件和 `@name` 委派思路
+- 拒绝把 Paperclip / Gemini 的治理控制面做进内核
+
+最终目标是一个最小但稳固的协作内核：一个 SQLite 任务板、一个 Kanban 命令行入口、一个调度器、一组工作者技能 / 工具，以及 Hermes profile。任何复杂的协作形态、角色分工和策略，都通过 profile、技能、插件扩展，而不是让内核变成“公司管理系统”。
+
+这也是 Kanban 和 `delegate_task` 的根本边界：`delegate_task` 是函数调用；Kanban 是持久工作队列。只要一次交接需要活过单个 API loop，并且需要被其他 profile 或人类看到、评论、恢复或审计，就应该进入任务板。
 
 ## 17.2 架构
 
-### 17.3.1 Control Plane：CLI / Gateway / Dashboard
+### 17.2.1 Control Plane：CLI / Gateway / Dashboard
 
-### 17.3.2 State Plane：SQLite board + dispatcher
+### 17.2.2 State Plane：SQLite board + dispatcher
 
-### 17.3.3 Execution Plane：独立 profile worker
+### 17.2.3 Execution Plane：独立 profile worker
 
-### 17.3.4 Critical invariant：不做进程内 subagent swarm
+### 17.2.4 Critical invariant：不做进程内 subagent swarm
 
-## 17.4 Data Model：数据模型
+## 17.3 Data Model：数据模型
 
-### 17.4.1 `tasks`
+### 17.3.1 `tasks`
 
-### 17.4.2 `task_links`
+### 17.3.2 `task_links`
 
-### 17.4.3 `task_comments`
+### 17.3.3 `task_comments`
 
-### 17.4.4 `task_events` / `task_runs`
+### 17.3.4 `task_events` / `task_runs`
 
-### 17.4.5 Status 状态机
+### 17.3.5 Status 状态机
 
-### 17.4.6 Workspace kinds
+### 17.3.6 Workspace kinds
 
-## 17.5 Collaboration Patterns：协作模式
+## 17.4 Collaboration Patterns：协作模式
 
-### 17.5.1 P1 Fan-out
+### 17.4.1 P1 Fan-out
 
-### 17.5.2 P2 Pipeline
+### 17.4.2 P2 Pipeline
 
-### 17.5.3 P3 Voting / Quorum
+### 17.4.3 P3 Voting / Quorum
 
-### 17.5.4 P4 Long-running journal
+### 17.4.4 P4 Long-running journal
 
-### 17.5.5 P5 Human-in-the-loop triage
+### 17.4.5 P5 Human-in-the-loop triage
 
-### 17.5.6 P6 @mention delegation
+### 17.4.6 P6 @mention delegation
 
-### 17.5.7 P7 Thread-scoped workspace
+### 17.4.7 P7 Thread-scoped workspace
 
-### 17.5.8 P8 Fleet farming
+### 17.4.8 P8 Fleet farming
 
-## 17.6 The Orchestrator Profile：编排者 profile
+## 17.5 The Orchestrator Profile：编排者 profile
 
-### 17.6.1 Orchestrator 是 control room，不是 worker
+### 17.5.1 Orchestrator 是 control room，不是 worker
 
-### 17.6.2 三个属性：禁用执行工具、加载 skill、遵守 specialist roster
+### 17.5.2 三个属性：禁用执行工具、加载 skill、遵守 specialist roster
 
-### 17.6.3 为什么 orchestrator 不是 kernel role
+### 17.5.3 为什么 orchestrator 不是 kernel role
 
-### 17.6.4 当前使用方式：直接聊天或作为 Kanban 总任务 assignee
+### 17.5.4 当前使用方式：直接聊天或作为 Kanban 总任务 assignee
 
-## 17.7 Multi-Tenant Context：多租户上下文
+## 17.6 Multi-Tenant Context：多租户上下文
 
-### 17.7.1 `tenant` 是 namespace，不是新实体
+### 17.6.1 `tenant` 是 namespace，不是新实体
 
-### 17.7.2 workspace、memory、board view、audit 的隔离方式
+### 17.6.2 workspace、memory、board view、audit 的隔离方式
 
-### 17.7.3 一个 specialist fleet 服务多个业务上下文
+### 17.6.3 一个 specialist fleet 服务多个业务上下文
 
-### 17.7.4 不做 tenant 级 ACL、跨 tenant 依赖、tenant-scoped profiles
+### 17.6.4 不做 tenant 级 ACL、跨 tenant 依赖、tenant-scoped profiles
 
-## 17.8 Worked Example：50-account social media fleet
+## 17.7 Worked Example：50-account social media fleet
 
-### 17.8.1 Setup：一个 specialist profile + 多个 workspace
+### 17.7.1 Setup：一个 specialist profile + 多个 workspace
 
-### 17.8.2 Per-tick task generation
+### 17.7.2 Per-tick task generation
 
-### 17.8.3 Dispatcher 并行 claim 和 spawn
+### 17.7.3 Dispatcher 并行 claim 和 spawn
 
-### 17.8.4 为什么这个模型干净
+### 17.7.4 为什么这个模型干净
 
-## 17.9 User Stories：典型故事
+## 17.8 User Stories：典型故事
 
-### 17.9.1 Research triage and synthesis
+### 17.8.1 Research triage and synthesis
 
-### 17.9.2 Scheduled recurring workflow
+### 17.8.2 Scheduled recurring workflow
 
-### 17.9.3 Digital-twin / persistent assistant role
+### 17.8.3 Digital-twin / persistent assistant role
 
-### 17.9.4 Coding pipeline
+### 17.8.4 Coding pipeline
 
-### 17.9.5 这些故事共同需要什么
+### 17.8.5 这些故事共同需要什么
 
-## 17.10 Kanban vs `delegate_task`
+## 17.9 Kanban vs `delegate_task`
 
-### 17.10.1 一句话区别
+### 17.9.1 一句话区别
 
-### 17.10.2 维度对比
+### 17.9.2 维度对比
 
-### 17.10.3 何时用 `delegate_task`
+### 17.9.3 何时用 `delegate_task`
 
-### 17.10.4 何时用 Kanban
+### 17.9.4 何时用 Kanban
 
-### 17.10.5 两者如何共存
+### 17.9.5 两者如何共存
 
-## 17.11 Assignment Semantics：任务归属语义
+## 17.10 Assignment Semantics：任务归属语义
 
-### 17.11.1 一个 task 只有一个 assignee
+### 17.10.1 一个 task 只有一个 assignee
 
-### 17.11.2 谁可以创建任务
+### 17.10.2 谁可以创建任务
 
-### 17.11.3 planner / router 只是约定，不是结构角色
+### 17.10.3 planner / router 只是约定，不是结构角色
 
-### 17.11.4 worker 能看到什么上下文
+### 17.10.4 worker 能看到什么上下文
 
-### 17.11.5 v1 不支持什么
+### 17.10.5 v1 不支持什么
 
-## 17.12 Dispatcher Design：调度器设计
+## 17.11 Dispatcher Design：调度器设计
 
-### 17.12.1 Dispatcher 故意很笨
+### 17.11.1 Dispatcher 故意很笨
 
-### 17.12.2 四个动作：recompute ready、atomic claim、spawn worker、stale recovery
+### 17.11.2 四个动作：recompute ready、atomic claim、spawn worker、stale recovery
 
-### 17.12.3 SQLite 并发正确性
+### 17.11.3 SQLite 并发正确性
 
-### 17.12.4 当前实现：Gateway 内置 dispatcher
+### 17.11.4 当前实现：Gateway 内置 dispatcher
 
-### 17.12.5 失败、重试和 circuit breaker
+### 17.11.5 失败、重试和 circuit breaker
 
-## 17.13 CLI / Gateway / Dashboard：当前操作入口
+## 17.12 CLI / Gateway / Dashboard：当前操作入口
 
-### 17.13.1 CLI command surface
+### 17.12.1 CLI command surface
 
-### 17.13.2 `/kanban` Slash command
+### 17.12.2 `/kanban` Slash command
 
-### 17.13.3 Dashboard Kanban tab
+### 17.12.3 Dashboard Kanban tab
 
-### 17.13.4 自动化：cron、webhook、idempotency key
+### 17.12.4 自动化：cron、webhook、idempotency key
 
-## 17.14 Worker Tool Surface：当前 `kanban_*` 工具
+## 17.13 Worker Tool Surface：当前 `kanban_*` 工具
 
-### 17.14.1 为什么 worker 不用 CLI
+### 17.13.1 为什么 worker 不用 CLI
 
-### 17.14.2 worker 启动环境变量
+### 17.13.2 worker 启动环境变量
 
-### 17.14.3 lifecycle 工具：show / heartbeat / complete / block / comment
+### 17.13.3 lifecycle 工具：show / heartbeat / complete / block / comment
 
-### 17.14.4 orchestrator 工具：list / create / link / unblock
+### 17.13.4 orchestrator 工具：list / create / link / unblock
 
-### 17.14.5 结构化 handoff：summary + metadata
+### 17.13.5 结构化 handoff：summary + metadata
 
-## 17.15 Scope Boundaries：什么不属于 kernel
+## 17.14 Scope Boundaries：什么不属于 kernel
 
-### 17.15.1 Smart routing / auto-assignment
+### 17.14.1 Smart routing / auto-assignment
 
-### 17.15.2 Org chart / hierarchy
+### 17.14.2 Org chart / hierarchy
 
-### 17.15.3 Budgets、approval gates、governance control plane
+### 17.14.3 Budgets、approval gates、governance control plane
 
-### 17.15.4 Fleet management dashboard
+### 17.14.4 Fleet management dashboard
 
-## 17.16 Risks / Tradeoffs / Open Questions
+## 17.15 Risks / Tradeoffs / Open Questions
 
-### 17.16.1 SQLite cross-process contention
+### 17.15.1 SQLite cross-process contention
 
-### 17.16.2 Stale workspace buildup
+### 17.15.2 Stale workspace buildup
 
-### 17.16.3 Profile misconfiguration
+### 17.15.3 Profile misconfiguration
 
-### 17.16.4 Polling over events
+### 17.15.4 Polling over events
 
-### 17.16.5 Cron 与 Kanban 的边界
+### 17.15.5 Cron 与 Kanban 的边界
 
-## 17.17 Current Implementation Notes：PDF 与当前实现的差异
+## 17.16 Current Implementation Notes：PDF 与当前实现的差异
 
-### 17.17.1 PDF 是设计稿，当前实现已经加入 toolset
+### 17.16.1 PDF 是设计稿，当前实现已经加入 toolset
 
-### 17.17.2 当前实现已有 multi-board、runs、Dashboard、specifier
+### 17.16.2 当前实现已有 multi-board、runs、Dashboard、specifier
 
-### 17.17.3 当前仍需以官方文档和源码为准
+### 17.16.3 当前仍需以官方文档和源码为准

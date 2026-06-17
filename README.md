@@ -1,5 +1,5 @@
 # Hermes Agent
-https://hermes-agent.nousresearch.com/docs
+https://hermes-agent.nousresearch.com/
 
 # 目录
 1. [Hermes Agent 是什么](#1-hermes-agent-是什么)
@@ -21,9 +21,9 @@ https://hermes-agent.nousresearch.com/docs
 17. [Kanban](#17-kanban)
 
 # 1. Hermes Agent 是什么
-Hermes Agent 是由 Nous Research 开发的开源 AI Agent 框架。它可以运行在终端、消息平台（Telegram、Discord、Slack 等）中，并自主调用工具完成任务。
+Hermes Agent 是由开源 AI 研究实验室 Nous Research 开发的开源 AI Agent 框架，可以运行在终端或消息平台（Telegram、Weixin 等）。
 
-Hermes 的独特优势：
+Hermes 的核心功能：
 - **技能自进化** — Hermes 能从经验中学习。解决复杂问题后，会保存可复用的流程为 Skill，下次遇到类似任务直接加载。
 - **跨会话持久记忆** — 记住用户身份与偏好、环境细节和经验教训。
 - **多平台网关** — 同一个 Agent 在 Telegram、Discord、Slack 等 10+ 平台上运行，且拥有完整的工具访问权限。

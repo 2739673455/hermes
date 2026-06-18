@@ -23,36 +23,50 @@ https://hermes-agent.nousresearch.com/
 # 1. Hermes Agent 是什么
 Hermes Agent 是由开源 AI 研究实验室 Nous Research 开发的开源 AI Agent 框架，具有以下核心特性：
 
-- **闭环学习循环**：Hermes 定期管理自身记忆，自主创建并整理优化技能，FTS5 跨会话召回信息，Honcho 辩证用户建模。
+- **闭环学习循环**：Hermes 定期管理自身记忆，自主创建并整理优化技能，FTS5（SQLite 全文搜索索引）跨会话召回信息。
 - **多平台网关**：通过网关链接 20 多个平台，包括 Telegram、Weixin 等。
-- **多 Agent 实例**：通过 Profile 运行多个互相隔离的 Hermes 实例，各自有独立的配置、会话、记忆和技能。
-- **多 Agent 协作**：通过子 Agent 委派或 Kanban，实现多 Agent 任务协作。
-- **可扩展**：自定义工具、钩子、技能、插件、MCP、定时任务等。
+- **多 Agent 实例**：通过 Profile 创建多个独立的 Hermes 实例，各自有独立的配置、会话、记忆和技能。
+- **多 Agent 协作**：通过子 Agent 委派或 Kanban 实现多 Agent 协作。
+- **可扩展**：自定义工具、MCP、技能、钩子、插件、定时任务等。
 
 # 2. 快速上手
 ## 2.1 安装
 https://hermes-agent.nousresearch.com/docs/getting-started/installation
 
-安装前请确认 git 可用。
-
-安装脚本主要会做这些事：
-
-- 拉取或更新 Hermes 源码。普通 Linux / macOS / WSL2 用户默认安装到 `~/.hermes/hermes-agent`；Windows 默认安装到 `%LOCALAPPDATA%\hermes\hermes-agent`
-- 创建 Python 虚拟环境并安装依赖；必要时会安装 `uv`、Node.js、浏览器工具相关依赖
-- 创建 `hermes` 命令入口，并提示把它所在目录加入 `PATH`
-- 初始化数据目录。Linux / macOS / WSL2 默认是 `~/.hermes`；Windows 默认是 `%LOCALAPPDATA%\hermes`
-- 仅在文件不存在时创建 `config.yaml`、`.env`、`SOUL.md`，已有配置会保留
-- 交互式终端中会继续运行 setup 向导
-
-### 2.1.1 Linux / macOS / WSL2
+**Linux / macOS / WSL2：**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
 ```
 
-### 2.1.2 Windows（PowerShell）
+**Windows (PowerShell)：**
 ```powershell
-iex (irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1)
+iex (irm https://hermes-agent.nousresearch.com/install.ps1)
 ```
+
+安装脚本主要会做如下操作：
+
+1. 检查并准备环境
+   - 安装或复用 Hermes 托管的 `uv`；不会复用系统已有的 `uv`
+   - 检查 Python 3.11；缺失时通过 Hermes 托管的 `uv` 安装
+   - 检查 Git；缺失时会尝试自动安装
+   - 检查 Node.js；优先复用系统 Node.js；缺失或版本不满足要求时会安装 Hermes 托管的 Node.js 22
+   - 检查网络连通性以及 ripgrep、ffmpeg 等系统依赖；缺失时会尝试自动安装
+2. 拉取或更新 Hermes 源码
+   - 拉取或更新 Hermes 源码。默认拉取到 `~/.hermes/hermes-agent` 或 `%LOCALAPPDATA%\hermes\hermes-agent`
+3. 安装依赖
+   - 创建 Python 虚拟环境并安装 Python 依赖
+   - 安装 Node.js 依赖、浏览器工具依赖和 TUI 依赖
+   - 没有可用系统浏览器且未跳过浏览器安装时，会尝试安装 Playwright Chromium
+4. 创建命令入口
+   - 创建 `hermes` 命令入口。普通用户通常链接到 `~/.local/bin`，Linux root FHS 安装链接到 `/usr/local/bin`
+5. 初始化数据目录和配置
+   - 初始化数据目录。默认是 `~/.hermes` 或 `%LOCALAPPDATA%\hermes`
+   - 仅在文件不存在时创建 `config.yaml`、`.env`、`SOUL.md`，已有配置会保留
+6. 同步技能和平台组件
+   - 默认同步 bundled skills
+   - Windows 会额外安装消息平台 SDK 并写入安装完成标记；`--include-desktop` 会额外构建桌面应用
+7. 执行交互式收尾
+   - 交互式安装会继续运行 setup 向导，并可选择启动或安装 Gateway；非交互式或传入跳过参数时不会运行这些交互步骤
 
 ## 2.2 初次配置
 ```bash
@@ -60,47 +74,38 @@ hermes model  # 交互式选择模型和提供商
 hermes setup  # 或者运行完整设置向导
 ```
 
-API Key 存储在 `~/.hermes/.env` 文件中。
+密钥存储在 `~/.hermes/.env` 文件中。
 
-## 2.3 交互式对话
+## 2.3 对话
 ```bash
-hermes        # 启动交互式对话
-hermes --tui  # 使用 TUI 启动交互式对话
+hermes                # 启动交互式对话
+hermes --tui          # 使用 TUI 启动交互式对话
+hermes chat -q "你好"  # 单次对话，适合脚本调用或一次性任务
 ```
 
-## 2.4 单次对话（非交互式）
-```bash
-hermes chat -q "查看系统资源占用情况"
-```
+## 2.4 常用快捷键
+| 快捷键                             | 功能                        |
+| ---------------------------------- | --------------------------- |
+| `Alt+V`                            | 从剪贴板粘贴图像            |
+| `Ctrl+C`                           | 中断 Agent                  |
+| `Ctrl+D`                           | 退出会话                    |
+| `Ctrl+Z`                           | 暂停并挂起到后台，`fg` 恢复 |
+| `Alt+Enter`/`Ctrl+J`/`Shift+Enter` | 插入新行，输入多行文本      |
 
-适合脚本调用或一次性任务。
-
-## 2.5 常用快捷键
-| 快捷键          | 功能                             |
-| --------------- | -------------------------------- |
-| `Alt + V`       | 从剪贴板粘贴图像                 |
-| `Ctrl + C`      | 中断当前操作                     |
-| `Ctrl + D`      | 退出会话                         |
-| `Ctrl + Z`      | 暂停并挂起到后台，`fg` 恢复      |
-| `Alt + Enter`   | 插入新行，输入多行文本           |
-| `Ctrl + J`      | 插入新行，输入多行文本           |
-| `Shift + Enter` | 插入新行，需终端支持独立按键序列 |
-
-## 2.6 更新
+## 2.5 更新
 https://hermes-agent.nousresearch.com/docs/getting-started/updating
 
 ```bash
 hermes update
 ```
 
-## 2.7 卸载
+## 2.6 卸载
 https://hermes-agent.nousresearch.com/docs/getting-started/updating#uninstalling
 
 ```bash
 hermes uninstall
 ```
 
-### 2.7.1 手动清理
 如果需要完全清理所有数据：
 
 ```bash
@@ -110,38 +115,39 @@ rm -rf ~/.hermes
 # 3. 配置文件与配置管理
 https://hermes-agent.nousresearch.com/docs/user-guide/configuration
 
-## 3.1 配置目录结构
+## 3.1 目录结构
 ```
 ~/.hermes/
-├── config.yaml     # 主配置文件（模型、终端、TTS、压缩等）
-├── .env            # API 密钥和机密信息
-├── auth.json       # OAuth 提供商凭证（Nous Portal 等）
-├── SOUL.md         # 主 Agent 的身份 / 人格文件，会拼入系统提示词开头部分
-├── memories/       # 持久化记忆（MEMORY.md、USER.md）
-├── skills/         # 技能
-├── cron/           # 定时任务
-├── sessions/       # 会话
-└── logs/           # 日志（errors.log、gateway.log — 密钥自动脱敏）
+├── config.yaml    # 主配置文件（模型、终端、TTS、压缩等）
+├── .env           # API 密钥和机密信息
+├── auth.json      # OAuth 提供商凭证（Nous Portal 等）
+├── SOUL.md        # 主 Agent 的身份文件，会拼入系统提示词开头部分
+├── memories/      # 持久化记忆（MEMORY.md、USER.md）
+├── skills/        # 技能
+├── cron/          # 定时任务
+├── sessions/      # 会话
+└── logs/          # 日志（errors.log、gateway.log — 密钥自动脱敏）
 ```
 
 ## 3.2 配置管理命令
 ```bash
-hermes config                 # 查看当前配置
-hermes config edit            # 用 $EDITOR 打开 config.yaml 编辑
+hermes config                        # 查看当前配置
+hermes config edit                   # 用 $EDITOR 打开 config.yaml 编辑
 hermes config set section.key value  # 直接设置某个配置项
 ```
 
 会话内也可以通过斜杠命令调整部分配置：
 https://hermes-agent.nousresearch.com/docs/reference/slash-commands#configuration
 
-| 命令                           | 功能                                                                 |
-| ------------------------------ | -------------------------------------------------------------------- |
-| `/config`                      | 查看当前配置                                                         |
-| `/model [model-name]`          | 查看或切换当前会话使用的模型                                         |
-| `/personality [name]`          | 切换预设交互风格 / 人格，例如更简洁、更解释型或某个自定义风格        |
-| `/reasoning [level/show/hide]` | 调整或查看模型推理级别；`show` / `hide` 控制是否显示推理相关信息     |
-| `/voice [on/off/tts/status]`   | 开启、关闭或查看语音输入 / TTS 输出状态                              |
-| `/yolo`                        | 切换绕过确认模式，减少工具执行确认；只建议在可信环境和低风险任务使用 |
+| 命令                           | 功能                         |
+| ------------------------------ | ---------------------------- |
+| `/config`                      | 查看当前配置                 |
+| `/model [model-name]`          | 查看或切换当前会话使用的模型 |
+| `/personality [name]`          | 切换预设交互风格 / 人格      |
+| `/reasoning [level/show/hide]` | 调整或查看模型推理级别       |
+| `/statusbar (别名: /sb)`       | 开关上下文/模型状态栏        |
+| `/voice [on/off/tts/status]`   | 开关或查看语音模型           |
+| `/yolo`                        | 跳过所有危险命令审批         |
 
 # 4. 会话管理
 https://hermes-agent.nousresearch.com/docs/user-guide/sessions
@@ -2487,3 +2493,185 @@ task 到达 `done` 或 `archived` 后，订阅会自动移除。
 `/kanban` 在 Gateway 中会绕过 running-agent guard：即使某个 agent 正在运行，也可以立刻执行 `list`、`show`、`comment`、`unblock`、`assign`、`archive` 等 board 操作。消息平台有长度限制，`/kanban list`、`/kanban show`、`/kanban tail` 的长输出可能被截断；终端里的 `hermes kanban ...` 没有这层消息长度限制。
 
 # 18. 案例：深度搜索
+## 18.1 定位
+Hermes 版 DeepResearch 是一条可确认、可追溯、可恢复的研究生产线。它接收自然语言研究需求，通过 Hermes Profile、Skill、MCP 工具和 Kanban 长任务队列完成研究计划、资料检索、证据整理、章节写作、综合结论和报告渲染。
+
+## 18.2 核心特性
+| 特性         | 说明                                                           |
+| ------------ | -------------------------------------------------------------- |
+| 研究计划先行 | 在执行检索前生成研究任务书、研究计划和大纲                     |
+| 用户可控     | 在约束、任务书、大纲、补充来源和章节重跑等节点允许用户介入     |
+| 多源研究     | 支持公开网页、指定网站、上传文件、内部知识库、数据库和外部 API |
+| 可追溯引用   | 每个关键判断通过证据链关联来源和事实卡片                       |
+| 长任务可恢复 | 使用 Kanban 保存任务状态、依赖、日志、失败重试和人工处理记录   |
+| 章节级重跑   | 每个章节独立检索、写作和保存，可单章重跑                       |
+| 工具可扩展   | 通过 MCP 接入搜索、网页读取、知识库、企业系统和报告渲染工具    |
+| 多格式交付   | 通过 Document IR 输出 HTML、PDF、Markdown、PPT 或前端组件      |
+
+## 18.3 执行流程
+1. 用户提交自然语言研究需求。
+2. `research-orchestrator` 判断是否需要向用户确认可选研究约束。
+3. 用户补充约束，或明确不需要限定。
+4. `research-orchestrator` 生成 `ResearchBrief`，固化研究目标、范围、排除项、关键问题、默认假设和交付标准。
+5. 用户确认或修改 `ResearchBrief`。
+6. `research-orchestrator` 生成 `ResearchPlan` 和 `ResearchOutline`。
+7. 用户确认或修改研究大纲。
+8. `research-orchestrator` 拆解检索任务和章节任务。
+9. `search-worker` 执行公开网页、指定站点、内部知识库、上传文件和外部 API 检索。
+10. `source-reviewer` 去重来源、评估可信度、整理证据链、事实卡片和风险说明。
+11. `section-writer` 基于证据链写作章节正文、关键发现、表格、图表和章节风险。
+12. `synthesis-writer` 汇总跨章节结论、建议和全局风险。
+13. `report-renderer` 将结构化研究结果渲染为报告版本。
+
+## 18.4 Hermes 架构
+```text
+用户 / Gateway / API
+  -> Hermes Kanban
+  -> Hermes Profiles
+  -> Skills
+  -> MCP 工具
+  -> 外部网页 / 内部知识库 / 文件 / 数据库 / 报告存储
+```
+
+| 层级     | 组件                              | 职责                                                       |
+| -------- | --------------------------------- | ---------------------------------------------------------- |
+| 交互层   | CLI、Gateway、Dashboard、产品 API | 接收研究需求、展示确认节点、查询报告和任务状态             |
+| 协作层   | Hermes Kanban                     | 管理长任务、依赖关系、章节并行、失败重试和审计日志         |
+| Agent 层 | Hermes Profiles                   | 承担研究编排、检索、来源审查、章节写作、综合和渲染职责     |
+| 能力层   | Skills                            | 固化研究方法、输出契约、引用规范、章节写作规范和报告规范   |
+| 工具层   | MCP Server                        | 暴露搜索、读取、检索、项目读写、章节保存和报告渲染工具     |
+| 存储层   | 数据库和对象存储                  | 保存研究项目、来源、章节、结构化结果、报告版本和 HTML 文件 |
+
+## 18.5 Profile 规划
+| Profile                 | 职责                                                           | 主要 Skill                                         |
+| ----------------------- | -------------------------------------------------------------- | -------------------------------------------------- |
+| `research-orchestrator` | 理解需求、确认约束、生成任务书和大纲、拆分任务、汇总状态       | `deepresearch-orchestrator`、`kanban-orchestrator` |
+| `search-worker`         | 执行公开搜索、指定站点搜索、网页读取、文件检索和内部知识库检索 | `deepresearch-search`、`kanban-worker`             |
+| `source-reviewer`       | 来源去重、可信度评估、冲突识别、证据链整理和风险记录           | `deepresearch-source-review`、`kanban-worker`      |
+| `section-writer`        | 章节正文、关键发现、表格、图表、证据链和章节风险写作           | `deepresearch-section`、`kanban-worker`            |
+| `synthesis-writer`      | 汇总执行摘要、核心结论、跨章节洞察、建议和全局风险             | `deepresearch-synthesis`、`kanban-worker`          |
+| `report-renderer`       | 通过确定性渲染生成 HTML、PDF、Markdown、PPT 或前端组件         | `deepresearch-report`、`kanban-worker`             |
+
+## 18.6 Skill 规划
+| Skill                        | 输入                                       | 输出                                                              |
+| ---------------------------- | ------------------------------------------ | ----------------------------------------------------------------- |
+| `deepresearch-orchestrator`  | 研究需求、用户约束、用户反馈、任务状态     | `ResearchBrief`、`ResearchPlan`、`ResearchOutline`、Kanban 任务图 |
+| `deepresearch-search`        | 检索问题、来源偏好、约束、已有来源         | 原始搜索结果、网页摘要、知识库片段、候选来源                      |
+| `deepresearch-source-review` | 候选来源、原文摘要、知识库片段、检索问题   | `Source`、`EvidenceChain`、`FactCard`、风险说明                   |
+| `deepresearch-section`       | 大纲节点、证据链、事实卡片、来源、章节要求 | `ResearchSection`                                                 |
+| `deepresearch-synthesis`     | 所有章节、事实卡片、洞察卡片、风险说明     | `ResearchSynthesis`                                               |
+| `deepresearch-report`        | `ResearchResult`、展示要求、输出格式       | `DocumentIR`、`ReportVersion`                                     |
+
+## 18.7 MCP 工具
+| 工具                    | 输入                                 | 输出                               |
+| ----------------------- | ------------------------------------ | ---------------------------------- |
+| `search_web`            | 查询词、站点过滤、时间过滤、结果数量 | 公开搜索结果                       |
+| `read_web_page`         | URL、最大字符数                      | 标题、发布时间、正文摘要、最终 URL |
+| `search_internal_kb`    | 查询词、数据集、文档范围、召回参数   | 内部知识库片段                     |
+| `read_uploaded_file`    | 文件编号、页码或范围                 | 文件正文、表格、元数据             |
+| `query_database`        | 数据源、查询参数                     | 结构化数据                         |
+| `save_research_brief`   | 项目编号、任务书                     | 保存结果                           |
+| `save_research_outline` | 项目编号、大纲                       | 保存结果                           |
+| `save_research_section` | 项目编号、章节结果                   | 保存结果和校验错误                 |
+| `save_research_result`  | 项目编号、结构化研究结果             | 保存结果                           |
+| `render_report`         | `DocumentIR`、输出格式               | 报告文件                           |
+| `save_report_version`   | 项目编号、报告元数据、报告文件       | 报告版本                           |
+
+## 18.8 Kanban 任务图
+```text
+root: research_request
+  |
+  v
+human: confirm_constraints
+  |
+  v
+task: generate_research_brief
+  |
+  v
+human: confirm_research_brief
+  |
+  v
+task: generate_research_plan
+  |
+  v
+human: confirm_outline
+  |
+  v
+task: decompose_research_tasks
+  |
+  +--> task: search_section_1
+  +--> task: search_section_2
+  +--> task: search_section_3
+  |
+  +--> task: review_sources_1
+  +--> task: review_sources_2
+  +--> task: review_sources_3
+  |
+  +--> task: write_section_1
+  +--> task: write_section_2
+  +--> task: write_section_3
+  |
+  v
+task: synthesize_research_result
+  |
+  v
+task: render_report
+```
+
+章节任务使用同一个 `project_id` 和不同的 `section_id`。章节写作任务必须保存 `ResearchSection` 后才能完成。报告渲染任务只读取 `ResearchResult`，不新增事实、来源或结论。
+
+## 18.9 数据对象
+| 对象                | 作用                                                     |
+| ------------------- | -------------------------------------------------------- |
+| `ResearchRequest`   | 用户原始研究需求和补充约束                               |
+| `ResearchBrief`     | 固化研究目标、范围、排除项、关键问题、默认假设和交付标准 |
+| `ResearchPlan`      | 记录研究方法、检索策略、来源偏好、章节任务和验收规则     |
+| `ResearchOutline`   | 报告结构、章节问题、证据需求和章节输出要求               |
+| `SearchTask`        | 可执行检索任务，包含查询词、来源范围、检索目标和预期证据 |
+| `Source`            | 可引用来源，包含标题、URL、发布时间、来源类型和摘要      |
+| `EvidenceChain`     | 关键判断、事实编号、来源编号和置信度                     |
+| `FactCard`          | 可复核事实、来源编号、置信度和适用范围                   |
+| `InsightCard`       | 基于事实形成的判断、支撑事实和适用边界                   |
+| `ResearchSection`   | 单章正文、关键发现、证据链、来源、表格、图表和风险说明   |
+| `ResearchSynthesis` | 执行摘要、核心结论、跨章节洞察、建议和全局风险           |
+| `ResearchResult`    | 报告渲染前的完整结构化研究结果                           |
+| `DocumentIR`        | 报告展示中间表示                                         |
+| `ReportVersion`     | 最终报告版本、格式、来源列表和存储地址                   |
+
+## 18.10 证据契约
+章节中的关键判断必须满足以下约束：
+
+- 每条关键判断必须写入 `EvidenceChain`。
+- `EvidenceChain.source_ids` 必须能对应到 `Source.source_id`。
+- 公开网页来源必须包含 HTTP URL。
+- 内部知识库来源必须标记 `source_type=internal_knowledge_base`。
+- 事实卡片只能保存可复核事实，不保存大段原文。
+- 口径差异、来源不足、时效性不足和样本偏差必须写入风险说明。
+- 报告渲染阶段不得新增事实、来源、判断或证据链。
+
+## 18.11 报告渲染
+报告渲染使用确定性流程：
+
+```text
+ResearchResult
+  -> DocumentIR
+  -> HTML / PDF / Markdown / PPT / 前端组件
+```
+
+`ResearchResult` 保存研究内容，`DocumentIR` 保存展示结构。`report-renderer` 只负责目录、引用、表格、图表、参考来源和版式，不负责新增研究结论。
+
+## 18.12 用户控制点
+| 控制点     | 用户操作                                       |
+| ---------- | ---------------------------------------------- |
+| 约束确认   | 补充约束，或明确不限定                         |
+| 任务书确认 | 修改研究目标、范围、排除项、关键问题和交付标准 |
+| 大纲确认   | 修改章节结构、章节问题和证据需求               |
+| 来源补充   | 添加指定网站、文件、内部文档或必须排除的来源   |
+| 章节重跑   | 只重跑指定章节的检索、来源审查或写作           |
+| 报告重渲染 | 基于已有 `ResearchResult` 重新生成不同格式报告 |
+
+## 18.13 参考能力来源
+- OpenAI Deep Research：https://openai.com/index/introducing-deep-research/
+- OpenAI Deep Research Help：https://help.openai.com/en/articles/10500283-deep-research-in-chatgpt
+- Gemini Deep Research Agent：https://ai.google.dev/gemini-api/docs/interactions/deep-research
+- Perplexity Sonar Deep Research：https://docs.perplexity.ai/docs/sonar/models/sonar-deep-research

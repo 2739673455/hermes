@@ -159,9 +159,7 @@ hermes config set section.key value  # 直接设置某个配置项
 | `/busy [interrupt/queue/steer]` | 查看或切换中断模式     |
 
 # 4. 会话管理
-https://hermes-agent.nousresearch.com/docs/user-guide/sessions
-
-Hermes Agent 自动将每次对话保存为一个会话。会话支持对话恢复、跨会话搜索以及完整的对话历史管理。
+Hermes Agent 自动将每次对话保存为一个会话。会话支持对话恢复、对话历史管理以及跨会话搜索。
 
 ## 4.1 常用命令
 CLI 命令：
@@ -272,19 +270,7 @@ compression:
 # 5. Toolsets
 工具是扩展 Agent 能力的函数。它们被组织为逻辑上的工具集。
 
-## 5.1 常用命令
-```bash
-hermes tools                            # 交互式管理工具集
-hermes tools list                       # 查看所有工具集
-hermes tools list --platform weixin     # 查看指定平台的工具集
-hermes tools enable yuanbao             # 启用 yuanbao 工具集
-hermes tools disable yuanbao            # 禁用 yuanbao 工具集
-
-/tools [list|disable|enable] [name...]  # 查看或管理可用工具
-/toolsets                               # 列出可用工具集
-```
-
-## 5.2 可用工具
+## 5.1 可用工具
 Hermes 包含如下工具：
 
 | 类别             | 包含工具                                                                                | 用途                                                                             |
@@ -298,6 +284,18 @@ Hermes 包含如下工具：
 | **记忆与召回**   | `memory`, `session_search`                                                              | 持久化记忆和会话搜索                                                             |
 | **自动化与投递** | `cronjob`, `send_message`                                                               | 定时任务和出站消息投递                                                           |
 | **集成**         | `ha_*`, MCP server 工具                                                                 | Home Assistant、MCP 及其他集成                                                   |
+
+## 5.2 常用命令
+```bash
+hermes tools                            # 交互式管理工具集
+hermes tools list                       # 查看所有工具集
+hermes tools list --platform weixin     # 查看指定平台的工具集
+hermes tools enable yuanbao             # 启用 yuanbao 工具集
+hermes tools disable yuanbao            # 禁用 yuanbao 工具集
+
+/tools [list|disable|enable] [name...]  # 查看或管理可用工具
+/toolsets                               # 列出可用工具集
+```
 
 ## 5.3 终端后端
 终端工具支持多种后端，用于在本机、容器、远程主机或云端环境中执行命令。
@@ -317,7 +315,7 @@ Hermes 包含如下工具：
 # ~/.hermes/config.yaml
 terminal:
   backend: docker
-  docker_image: python:3.11-slim
+  docker_image: "nikolaik/python-nodejs:python3.11-nodejs20"
 ```
 
 ### 5.3.3 SSH 后端配置
@@ -335,21 +333,33 @@ TERMINAL_SSH_KEY=~/.ssh/id_rsa
 ```
 
 # 6. MCP
-https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp
+MCP 让 Agent 连接到外部工具服务器。
 
-MCP（Model Context Protocol）可以把外部工具服务器接入 Hermes。
+## 6.1 MCP 服务器配置
+可配置两种服务器：
 
-## 6.1 添加 MCP 服务器
-https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference
+1. stdio
+   - 工作方式：本机启动 MCP server 进程，通过 stdin / stdout 与其通信
+   - 适用场景：服务器已在本地安装、低延迟访问本地资源
+   - 常用字段：
+     - command：MCP 服务器的可执行文件
+     - args：服务器的参数
+     - env：传递给服务器的环境变量
+2. HTTP
+   - 工作方式：连接远程 MCP server
+   - 适用场景：公司内部服务、远程 API、共享的工具服务器
+   - 常用字段：
+     - url：MCP 服务器端点
+     - headers：HTTP 请求头
 
-配置示例：
+示例：
 
 ```yaml
 # ~/.hermes/config.yaml
 mcp_servers:
   project-fs:
     command: "npx"
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user/my-project"]
+    args: ["-y", "@mcp/server-filesystem", "/home/user/my-project"]
 
   company_api:
     url: "https://mcp.internal.example.com/mcp"
@@ -357,30 +367,29 @@ mcp_servers:
       Authorization: "Bearer ***"
 ```
 
-上面两个 server 分别代表两种传输方式：
-
-| 模式  | 配置方式           | 工作方式                                                        | 适用场景                                 |
-| ----- | ------------------ | --------------------------------------------------------------- | ---------------------------------------- |
-| stdio | `command` + `args` | Hermes 在本机启动 MCP server 进程，通过 stdin / stdout 与其通信 | 本地文件系统、CLI 工具、开发环境里的集成 |
-| HTTP  | `url`              | Hermes 连接一个已经运行的 MCP server                            | 公司内部服务、远程 API、共享的工具服务器 |
-
 常用配置项：
 
-| 配置项            | 说明                                        |
-| ----------------- | ------------------------------------------- |
-| `command`         | 本地 stdio MCP Server 的启动命令            |
-| `args`            | 传给启动命令的参数                          |
-| `env`             | 传给 stdio server 的环境变量                |
-| `url`             | 远程 HTTP MCP Server 地址                   |
-| `headers`         | 远程 HTTP 请求头                            |
-| `auth: oauth`     | 仅用于 HTTP server，启用 OAuth 2.1 授权流程 |
-| `enabled`         | 是否启用该 server                           |
-| `timeout`         | 工具调用超时时间                            |
-| `connect_timeout` | 初次连接超时时间                            |
+| 配置项                         | 说明                                  |
+| ------------------------------ | ------------------------------------- |
+| `timeout`                      | 工具调用超时时间                      |
+| `connect_timeout`              | 初始连接超时时间                      |
+| `enabled`                      | 是否启用该 server                     |
+| `supports_parallel_tool_calls` | 若为 true，该服务器的工具可并发运行   |
+| `tools`                        | 按服务器过滤工具及实用工具策略        |
+| `auth`                         | 若为 oauth 可启用带 PKCE 的 OAuth 2.1 |
 
-`auth: oauth` 通常需要一次浏览器交互式授权。授权完成后，Hermes 会缓存授权结果，后续调用复用已授权 token。
+tools 配置项：
 
-可以在每个 server 下配置 `tools.include` 或 `tools.exclude`，来控制注册工具白名单或黑名单：
+| 配置项      | 说明                                         |
+| ----------- | -------------------------------------------- |
+| `include`   | 工具白名单，指定允许注册的 MCP 工具          |
+| `exclude`   | 工具黑名单，指定不允许注册的 MCP 工具        |
+| `resources` | 启用/禁用 `list_resources` + `read_resource` |
+| `prompts`   | 启用/禁用 `list_prompts` + `get_prompt`      |
+
+若 `include` 和 `exclude` 同时配置，则 `include` 优先。
+
+tools 配置示例：
 
 ```yaml
 # ~/.hermes/config.yaml
@@ -403,17 +412,15 @@ mcp_servers:
       exclude: [delete_customer, refund_payment]
 ```
 
-## 6.2 管理与重载
+## 6.2 常用命令
 ```bash
-hermes mcp list                  # 列出已配置的服务器
-hermes mcp test project-fs       # 测试连接
-hermes mcp configure project-fs  # 管理服务器中的工具启用状态
-hermes mcp remove project-fs     # 移除服务器
+hermes mcp list              # 列出已配置的服务器
+hermes mcp test <name>       # 测试连接
+hermes mcp configure <name>  # 管理服务器中的工具启用状态
+hermes mcp remove <name>     # 移除服务器
 
-/reload-mcp  # 修改配置后，在会话内重载 MCP 工具
+/reload-mcp                  # 重新加载 MCP 服务器
 ```
-
-Hermes 启动时会自动发现 MCP 工具。修改 `mcp_servers` 配置后，用 `/reload-mcp` 重新加载；如果 MCP Server 支持动态工具变更通知，Hermes 可以自动刷新工具列表。
 
 # 7. Skills
 https://hermes-agent.nousresearch.com/docs/user-guide/features/skills

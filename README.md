@@ -215,7 +215,7 @@ SQLite 数据库使用 WAL 模式支持并发读取和单写入。
 ## 4.3 上下文压缩
 当会话上下文长度接近限制时，Hermes 会自动压缩历史消息，保留关键信息并维持上下文窗口可用。
 
-### 4.3.1 上下文压缩相关配置
+### 4.3.1 相关配置
 ```yaml
 # ~/.hermes/config.yaml
 compression:
@@ -270,72 +270,69 @@ compression:
    - 用途：按时间顺序返回最近 session 的标题、预览和时间戳
 
 # 5. Toolsets
-https://hermes-agent.nousresearch.com/docs/user-guide/features/tools
+工具是扩展 Agent 能力的函数。它们被组织为逻辑上的工具集。
 
-工具（Tools）是 Hermes 调用外部能力的基本单元——搜索网页、执行命令、读写文件、控制浏览器等。工具按功能分组为「工具集」（Toolsets），可以按平台按需启用或禁用，从而精确控制 Agent 的能力范围。
-
-## 5.1 基本操作
+## 5.1 常用命令
 ```bash
-hermes tools                  # 交互式管理工具集
-hermes tools list             # 查看所有工具集
-hermes tools list --platform weixin  # 查看指定平台的工具集
-hermes tools enable yuanbao   # 启用 yuanbao 工具集
-hermes tools disable yuanbao  # 禁用 yuanbao 工具集
+hermes tools                            # 交互式管理工具集
+hermes tools list                       # 查看所有工具集
+hermes tools list --platform weixin     # 查看指定平台的工具集
+hermes tools enable yuanbao             # 启用 yuanbao 工具集
+hermes tools disable yuanbao            # 禁用 yuanbao 工具集
 
-/tools    # 会话内查看 / 管理可用工具
-/verbose  # 切换工具执行展示模式（all → verbose → off → new）
+/tools [list|disable|enable] [name...]  # 查看或管理可用工具
+/toolsets                               # 列出可用工具集
 ```
 
-`/verbose` 控制工具执行过程在会话里显示多少信息：
+## 5.2 可用工具
+Hermes 包含如下工具：
 
-| 模式      | 含义                                             |
-| --------- | ------------------------------------------------ |
-| `off`     | 只显示最终回复，不展示工具调用、日志或推理信息   |
-| `new`     | 工具调用发生时显示简短的一行进度                 |
-| `all`     | 显示所有工具活动，包括工具结果                   |
-| `verbose` | 显示最完整细节，包括工具参数和输出，适合调试问题 |
-
-## 5.2 工具分类
-Hermes 内置的工具按用途分为以下几类：
-
-| 类别             | 包含工具                                                 | 用途                                       |
-| ---------------- | -------------------------------------------------------- | ------------------------------------------ |
-| **Web**          | `web_search`, `web_extract`                              | 搜索网页、提取页面内容                     |
-| **终端与文件**   | `terminal`, `process`, `read_file`, `patch`              | 执行命令、读写文件                         |
-| **浏览器**       | `browser_navigate`, `browser_snapshot`, `browser_vision` | 交互式浏览器自动化，支持文本与视觉         |
-| **媒体**         | `vision_analyze`, `image_generate`, `text_to_speech`     | 多模态分析与内容生成                       |
-| **编排**         | `todo`, `clarify`, `execute_code`, `delegate_task`       | 任务规划、澄清需求、代码执行、委托子 Agent |
-| **记忆与召回**   | `memory`, `session_search`                               | 持久化记忆、搜索历史会话                   |
-| **自动化与推送** | `cronjob`, `send_message`                                | 定时任务、消息推送                         |
-| **集成**         | `ha_*`, MCP 工具, `rl_*`                                 | Home Assistant、MCP 服务器、RL 训练等      |
+| 类别             | 包含工具                                                                                | 用途                                                                             |
+| ---------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| **Web**          | `web_search`, `web_extract`                                                             | 搜索网页并提取页面内容                                                           |
+| **X 搜索**       | `x_search`                                                                              | 搜索 X（Twitter）帖子和话题；需要 xAI 凭据，默认关闭，可通过 `hermes tools` 启用 |
+| **终端与文件**   | `terminal`, `process`, `read_file`, `patch`                                             | 执行命令并操作文件                                                               |
+| **浏览器**       | `browser_navigate`, `browser_snapshot`, `browser_vision`                                | 交互式浏览器自动化，支持文本与视觉                                               |
+| **媒体**         | `vision_analyze`, `image_generate`, `video_generate`, `video_analyze`, `text_to_speech` | 多模态分析与生成；视频工具需手动启用 `video_gen` / `video` 工具集                |
+| **Agent 编排**   | `todo`, `clarify`, `execute_code`, `delegate_task`                                      | 任务规划、澄清需求、代码执行和子 Agent 委托                                      |
+| **记忆与召回**   | `memory`, `session_search`                                                              | 持久化记忆和会话搜索                                                             |
+| **自动化与投递** | `cronjob`, `send_message`                                                               | 定时任务和出站消息投递                                                           |
+| **集成**         | `ha_*`, MCP server 工具                                                                 | Home Assistant、MCP 及其他集成                                                   |
 
 ## 5.3 终端后端
-终端工具支持 7 种后端，适应不同的安全隔离和运行环境需求：
+终端工具支持多种后端，用于在本机、容器、远程主机或云端环境中执行命令。
 
-| 后端             | 说明                   | 适用场景                        |
-| ---------------- | ---------------------- | ------------------------------- |
-| `local`          | 在本机直接执行（默认） | 本地开发、可信任务              |
-| `docker`         | 隔离容器中执行         | 安全隔离、可复现环境            |
-| `ssh`            | 远程服务器执行         | 沙箱化，防止 Agent 修改自身代码 |
-| `singularity`    | HPC 容器（Apptainer）  | 集群计算、无 root 环境          |
-| `modal`          | 云端无服务器执行       | 弹性伸缩                        |
-| `daytona`        | 云端沙箱工作区         | 持久化远程开发环境              |
-| `vercel_sandbox` | Vercel 云端微虚拟机    | 部署与长期运行进程              |
+### 5.3.1 后端类型
+| 后端          | 说明                                  | 适用场景                    |
+| ------------- | ------------------------------------- | --------------------------- |
+| `local`       | 在本机直接执行命令（默认）            | 本地开发、可信任务          |
+| `docker`      | 在 Docker 容器中执行命令              | 隔离运行、可复现环境        |
+| `ssh`         | 通过 SSH 在远程主机执行命令           | 远程服务器、沙箱主机        |
+| `singularity` | 在 Singularity / Apptainer 容器中执行 | HPC、集群、无 root 容器环境 |
+| `modal`       | 在 Modal 云端沙箱中执行命令           | 无服务器、弹性扩展          |
+| `daytona`     | 在 Daytona workspace 中执行命令       | 持久化云端开发环境          |
 
-选择建议：
-
-- 默认先用 `local`，适合本机开发和可信任务
-- 不信任任务内容、担心误改本机文件时，用 `docker`
-- 目标环境在远程服务器上时，用 `ssh`
-- HPC / 集群环境优先考虑 `singularity`
-- 需要云端隔离或弹性资源时，考虑 `modal`、`daytona`、`vercel_sandbox`
-
-切换后端：
-```bash
-hermes config set terminal.backend docker
+### 5.3.2 Docker 后端配置
+```yaml
+# ~/.hermes/config.yaml
+terminal:
+  backend: docker
+  docker_image: python:3.11-slim
 ```
 
-当命令需要 sudo 权限时，终端会提示输入密码（会话内缓存）。也可以在 `~/.hermes/.env` 中设置 `SUDO_PASSWORD` 环境变量。
+### 5.3.3 SSH 后端配置
+```yaml
+# ~/.hermes/config.yaml
+terminal:
+  backend: ssh
+```
+
+```yaml
+# ~/.hermes/.env
+TERMINAL_SSH_HOST=my-server.example.com
+TERMINAL_SSH_USER=myuser
+TERMINAL_SSH_KEY=~/.ssh/id_rsa
+```
 
 # 6. MCP
 https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp

@@ -902,7 +902,7 @@ Gateway 常用挂载点：
 
 1. 创建脚本目录并复制脚本：
 
-使用 `scripts/hooks/conversation-end-popup.py` 和 `scripts/hooks/mac-toast.swift`。Windows / WSL 使用 PowerShell 弹窗，macOS 使用同目录的 `mac-toast` helper。
+使用仓库中的 [scripts/hooks/conversation-end-popup.py](scripts/hooks/conversation-end-popup.py) 和 [scripts/hooks/mac-toast.swift](scripts/hooks/mac-toast.swift)。Windows / WSL 使用 PowerShell 弹窗，macOS 使用同目录的 `mac-toast` helper。
 
 ```bash
 mkdir -p ~/.hermes/agent-hooks
@@ -930,208 +930,74 @@ printf '{}' | ~/.hermes/agent-hooks/conversation-end-popup.py
 首次运行时 Hermes 会询问是否允许这个 `(event, command)` 组合。
 
 # 9. Plugins
-https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins
-
-Hermes 拥有一个插件系统，无需修改核心代码即可添加自定义工具、钩子和集成。
+Hermes 提供了一套插件系统，可在不修改核心代码的情况下添加自定义工具、钩子和集成。
 
 ## 9.1 插件能做什么
-https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins#what-plugins-can-do
+不同插件类型对应不同扩展对象，常见场景如下：
 
-插件通过 `register(ctx)` 函数接入 Hermes，`ctx` 上所有公开 API 均可使用。以下是完整扩展点：
+| 场景          | 可扩展内容                                         | 适用说明                                      |
+| ------------- | -------------------------------------------------- | --------------------------------------------- |
+| 通用插件      | 工具、钩子、斜杠命令、CLI 命令、消息注入           | 给 Agent 增加本地能力、工作流入口或自动化逻辑 |
+| 插件附带资源  | Skill、模板、配置、静态数据                        | 把可复用知识或资源随插件一起分发              |
+| Provider 插件 | Memory provider、Context engine、Model provider    | 替换或增强记忆、上下文压缩和模型后端          |
+| Gateway 平台  | 消息平台适配器                                     | 接入新的消息平台                              |
+| 媒体后端      | 图像生成、视频生成、TTS 等生成后端                 | 接入外部生成服务或本地生成引擎                |
+| 宿主 LLM 调用 | 使用 Hermes 当前配置的模型做一次性补全或结构化生成 | 插件内部需要轻量模型调用时使用                |
 
-| 扩展类型     | 说明                                                       |
-| ------------ | ---------------------------------------------------------- |
-| 工具         | 给模型增加可调用能力，例如外部 API、本地服务或自定义逻辑   |
-| 钩子         | 在工具调用、LLM 调用、会话开始 / 结束等生命周期点执行代码  |
-| 命令         | 增加 `/name` 斜杠命令，或增加 `hermes <plugin> ...` 子命令 |
-| 会话注入     | 把外部事件、消息或数据注入当前会话                         |
-| Skill / 数据 | 随插件附带 Skill、模板、配置、静态数据等资源               |
-| Gateway 平台 | 接入新的消息平台或自定义平台适配器                         |
-| 后端提供商   | 接入新的记忆、上下文压缩、图像生成、视频生成或 LLM 提供商  |
+## 9.2 插件发现与启用
+Hermes 会从多个位置发现插件：
 
-## 9.2 插件目录
-用户插件目录是 `~/.hermes/plugins/`，每个插件一个独立子目录。最小可用插件只需要两个文件：
+| 来源    | 路径 / 方式                          | 用途                                                                               |
+| ------- | ------------------------------------ | ---------------------------------------------------------------------------------- |
+| Bundled | Hermes 仓库内置 `plugins/`           | 官方随 Hermes 发布的插件                                                           |
+| User    | `~/.hermes/plugins/`                 | 用户自己的本地插件                                                                 |
+| Project | `.hermes/plugins/`                   | 当前工作目录插件；默认不扫描，需设置 `HERMES_ENABLE_PROJECT_PLUGINS=true` 显式信任 |
+| pip     | `hermes_agent.plugins` entry points  | 通过 Python 包分发的插件                                                           |
+| Nix     | `services.hermes-agent.extraPlugins` | NixOS 声明式安装插件                                                               |
+
+Hermes 还会扫描插件子目录，用于注册特定类型的 provider 或平台适配器：
+
+| 子目录                     | 用途                 |
+| -------------------------- | -------------------- |
+| `plugins/` 根目录          | 通用插件             |
+| `plugins/platforms/`       | Gateway 平台适配器   |
+| `plugins/image_gen/`       | 图像生成后端         |
+| `plugins/video_gen/`       | 视频生成后端         |
+| `plugins/memory/`          | 外部记忆 provider    |
+| `plugins/context_engine/`  | 上下文压缩引擎       |
+| `plugins/model-providers/` | 模型 / 推理 provider |
+
+同名插件以最后发现的来源为准。因此，用户插件可以覆盖同名的内置插件。
+
+用户插件以独立子目录存放，最小结构如下：
 
 ```text
 ~/.hermes/plugins/hello-world/
 ├── plugin.yaml      # 插件清单：名称、版本、描述等元信息
-└── __init__.py      # 定义 register(ctx)，在这里注册工具 / hook / 命令
+└── __init__.py      # 定义 register(ctx)，在这里注册插件内容
 ```
 
-其中真正的接入点是 `__init__.py` 里的 `register(ctx)`。Hermes 加载插件后会调用这个函数；插件也是在这里通过 `ctx.register_tool(...)`、`ctx.register_hook(...)`、`ctx.register_command(...)` 等 API 把自己的能力注册进 Hermes。
-
-`plugin.yaml` 主要负责插件发现和元信息，例如名称、版本、描述、依赖环境变量等。也就是说：`plugin.yaml` 让 Hermes 知道“这里有一个插件”，`register(ctx)` 决定“这个插件实际提供什么能力”。
-
-## 9.3 插件示例
-注册一个 `shake_window` 工具。这个工具适合 WSL / Git Bash / Windows 终端环境：模型调用工具后，插件通过 `powershell.exe` 调用 Windows API，让当前前台窗口轻微左右晃动。
-
-创建目录：
-
-```bash
-mkdir -p ~/.hermes/plugins/shake-window
-```
-
-创建 `~/.hermes/plugins/shake-window/plugin.yaml`：
-
-```yaml
-name: shake-window
-version: "1.0"
-description: Provides a shake_window tool that briefly shakes the current Windows foreground window as a visible desktop attention cue.
-```
-
-创建 `~/.hermes/plugins/shake-window/__init__.py`：
-
-```python
-import json
-import shutil
-import subprocess
-
-
-POWERSHELL_SHAKE = r"""
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-
-public static class Win32 {
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-
-    [DllImport("user32.dll")]
-    public static extern bool MoveWindow(IntPtr hWnd, int X, int Y, int nWidth, int nHeight, bool bRepaint);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-}
-
-[StructLayout(LayoutKind.Sequential)]
-public struct RECT {
-    public int Left;
-    public int Top;
-    public int Right;
-    public int Bottom;
-}
-"@
-
-$hwnd = [Win32]::GetForegroundWindow()
-if ($hwnd -eq [IntPtr]::Zero) {
-    Write-Error "No foreground window found."
-    exit 1
-}
-
-$rect = New-Object RECT
-if (-not [Win32]::GetWindowRect($hwnd, [ref]$rect)) {
-    Write-Error "GetWindowRect failed."
-    exit 1
-}
-
-$x = $rect.Left
-$y = $rect.Top
-$w = $rect.Right - $rect.Left
-$h = $rect.Bottom - $rect.Top
-
-# 最大化窗口通常无法直接移动，先恢复成普通窗口。
-[void][Win32]::ShowWindow($hwnd, 9)
-Start-Sleep -Milliseconds 100
-
-for ($i = 0; $i -lt 8; $i++) {
-    [void][Win32]::MoveWindow($hwnd, $x - 12, $y, $w, $h, $true)
-    Start-Sleep -Milliseconds 45
-    [void][Win32]::MoveWindow($hwnd, $x + 12, $y, $w, $h, $true)
-    Start-Sleep -Milliseconds 45
-}
-
-[void][Win32]::MoveWindow($hwnd, $x, $y, $w, $h, $true)
-"""
-
-
-def register(ctx):
-    schema = {
-        "name": "shake_window",
-        "description": "Shake the current Windows foreground window.",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-        },
-    }
-
-    def handle_shake(params, **kwargs):
-        del params, kwargs
-
-        powershell = shutil.which("powershell.exe")
-        if powershell is None:
-            return json.dumps({
-                "ok": False,
-                "error": "powershell.exe not found",
-            })
-
-        result = subprocess.run(
-            [powershell, "-NoProfile", "-Command", POWERSHELL_SHAKE],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-        return json.dumps({
-            "ok": result.returncode == 0,
-            "stdout": result.stdout.strip(),
-            "stderr": result.stderr.strip(),
-        })
-
-    ctx.register_tool(
-        name="shake_window",
-        toolset="desktop_fun",
-        schema=schema,
-        handler=handle_shake,
-        description="Shake the current Windows foreground window.",
-    )
-```
-
-启用插件：
-
-```bash
-hermes plugins enable shake-window
-```
-
-重新启动 Hermes 后，模型就能调用 `shake_window` 工具。
-
-## 9.4 插件发现
-Hermes 会从多个来源发现插件：
-
-| 来源    | 路径 / 方式                         | 用途                                                                               |
-| ------- | ----------------------------------- | ---------------------------------------------------------------------------------- |
-| Bundled | Hermes 仓库内置 `plugins/`          | 官方随 Hermes 发布的插件                                                           |
-| User    | `~/.hermes/plugins/`                | 用户自己的本地插件                                                                 |
-| Project | `.hermes/plugins/`                  | 当前工作目录插件；默认不扫描，需设置 `HERMES_ENABLE_PROJECT_PLUGINS=true` 显式信任 |
-| pip     | `hermes_agent.plugins` entry points | 通过 Python 包分发的插件                                                           |
-
-## 9.5 管理插件
-常用命令：
-
-```bash
-hermes plugins                    # 交互式开关插件
-hermes plugins list               # 查看已安装插件
-hermes plugins install user/repo  # 从 GitHub 安装插件
-hermes plugins update <name>      # 更新插件
-hermes plugins remove <name>      # 移除插件
-hermes plugins enable <name>      # 启用插件
-hermes plugins disable <name>     # 禁用插件
-```
-
-新安装或捆绑的插件默认情况下不启用，必须加入 `~/.hermes/config.yaml` 的 `plugins.enabled` 后才会加载工具、hooks 或命令。
+普通插件和用户安装的 provider 默认只会被发现，不会自动启用。需要加入 `~/.hermes/config.yaml` 的 `plugins.enabled` 后，插件才会加载工具、hooks、命令或 provider：
 
 ```yaml
 # ~/.hermes/config.yaml
 plugins:
   enabled:
     - my-plugin
-  disabled:
+  disabled:  # 禁用优先于启用
     - noisy-plugin
 ```
 
-`plugins.disabled` 是拒绝列表，如果同一个插件同时出现在 `enabled` 和 `disabled`，禁用优先。
+## 9.3 常用命令
+```bash
+hermes plugins                    # 交互式开关插件
+hermes plugins list               # 查看已安装插件
+hermes plugins install user/repo  # 从 Git 安装插件
+hermes plugins update <name>      # 更新插件
+hermes plugins remove <name>      # 移除插件
+hermes plugins enable <name>      # 启用插件
+hermes plugins disable <name>     # 禁用插件
+```
 
 # 10. 持久记忆
 https://hermes-agent.nousresearch.com/docs/user-guide/features/memory

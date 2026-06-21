@@ -565,8 +565,62 @@ hermes skills config              # 管理技能配置
 /skills                           # 管理技能
 ```
 
-## 7.4 Agent-Managed Skills (skill_manage tool)
-Hermes 可以通过 `skill_manage` 工具创建、修改和删除自己的技能。这是 Agent 的「程序记忆」：当它解决了一个有复用价值的复杂问题，就可以把流程沉淀成 Skill，下次遇到类似任务时直接加载。
+## 7.4 Skill 捆绑包
+Skill 捆绑包用于把多个 Skill 组合到同一个斜杠命令下。当运行 `/<bundle-name>` 时，捆绑包中列出的 Skill 会同时加载，适合固定组合使用的重复任务。
+
+### 7.4.1 创建示例
+```bash
+hermes bundles create backend-dev \
+  --skill github-code-review \
+  --skill test-driven-development \
+  --skill github-pr-workflow \
+  -d "Backend feature work — review, test, PR workflow"
+```
+
+捆绑包存放在 `~/.hermes/skill-bundles/<slug>.yaml` 中：
+
+```yaml
+name: backend-dev
+description: Backend feature work — review, test, PR workflow
+skills:
+  - github-code-review
+  - test-driven-development
+  - github-pr-workflow
+instruction: |
+  Always start by writing failing tests, then implement.
+  Open the PR through the standard workflow with co-author tags.
+```
+
+字段说明：
+
+| 字段          | 说明                                                        |
+| ------------- | ----------------------------------------------------------- |
+| `name`        | 显示名称；默认使用文件名主干，并规范化为斜杠命令 slug       |
+| `description` | 在 `/bundles` 和 `hermes bundles list` 中显示的简短说明     |
+| `skills`      | 必填，非空列表；可以写 Skill 名称或相对于 Skills 目录的路径 |
+| `instruction` | 可选；加载这些 Skill 时追加的额外指令                       |
+
+### 7.4.2 行为规则
+- **命令冲突时捆绑包优先**：如果捆绑包和单个 Skill 使用同一个 slug，斜杠命令会调用捆绑包
+- **缺失 Skill 会被跳过**：捆绑包会加载能解析的 Skill，并提示哪些条目被跳过
+- **跨界面可用**：交互式 CLI、TUI、Dashboard Chat 和 Gateway 平台都可以使用捆绑包
+- **不会修改系统提示词**：捆绑包调用时生成一条新的用户消息，不会使 prompt 缓存失效
+- **不会自动安装 Skill**：捆绑包只是 YAML 别名，列出的 Skill 必须已存在于本地或外部 Skill 目录
+
+### 7.4.3 常用命令
+```bash
+hermes bundles list                    # 列出所有捆绑包
+hermes bundles show backend-dev        # 查看捆绑包
+hermes bundles create research         # 交互式创建捆绑包
+hermes bundles create backend-dev --skill ... --force  # 覆盖现有捆绑包
+hermes bundles delete backend-dev      # 删除捆绑包
+hermes bundles reload                  # 重新扫描 skill-bundles 目录
+
+/bundles                               # 会话内列出捆绑包
+```
+
+## 7.5 Agent-Managed Skills (skill_manage tool)
+Agent 可以通过 `skill_manage` 工具创建、修改和删除自己的技能。这是 Agent 的「程序记忆」：当它找到一个非平凡的工作流时，它会将该方法保存为 Skill 以供将来复用。
 
 触发策略主要靠提示词驱动，Hermes 会从几个位置共同推动 Agent 创建或更新技能：
 
@@ -604,7 +658,7 @@ Hermes 可以通过 `skill_manage` 工具创建、修改和删除自己的技能
 
 `umbrella` 强调“覆盖一组相关流程”；`class-level` 强调“抽象到任务类别”。Curator 和后台 review 更偏好把零散、狭窄、只记录一次问题的 Skill 合并成这类更通用的 Skill。
 
-## 7.5 Curator（技能维护）
+## 7.6 Curator（技能维护）
 https://hermes-agent.nousresearch.com/docs/user-guide/features/curator
 
 Curator 是 Hermes 的技能维护系统，专门管理由后台自我改进 review agent 创建并标记的本地技能。它会跟踪这些技能的查看、使用和修改频率，把长期不用的技能从 `active` 推进到 `stale`，再归档到 `~/.hermes/skills/.archive/`。
@@ -617,7 +671,7 @@ Curator 的存在是为了防止通过自我提升循环产生的技能无限累
 - Curator 的 LLM Review 会跳过它
 - Agent 的 `skill_manage delete` 也不能删除它，但仍然可以 `patch` / `edit` 改进内容
 
-### 7.5.1 运行机制
+### 7.6.1 运行机制
 Curator 在 Hermes 启动或 Gateway 后台 tick 时检查是否满足运行条件。自动运行需要同时满足以下门槛：
 
 - `curator.enabled` 没有被设为 `false`
@@ -661,7 +715,7 @@ Three ways to consolidate:
   c. DEMOTE TO REFERENCES/TEMPLATES/SCRIPTS.
 ```
 
-### 7.5.2 配置
+### 7.6.2 配置
 Curator 配置示例：
 
 ```yaml
@@ -685,7 +739,7 @@ auxiliary:
     timeout: 600
 ```
 
-### 7.5.3 常用命令
+### 7.6.3 常用命令
 ```bash
 hermes curator status                   # 查看技能状态
 hermes curator run                      # 手动运行策展
@@ -700,7 +754,7 @@ hermes curator restore my-skill         # 恢复已归档的技能
 
 同样的子命令也可以在会话中通过 `/curator` 斜杠命令使用。
 
-### 7.5.4 备份与回滚
+### 7.6.4 备份与回滚
 每次 Curator 运行前，Hermes 会把 `~/.hermes/skills/` 打包备份到：
 
 ```text
@@ -727,7 +781,7 @@ curator:
     keep: 5
 ```
 
-### 7.5.5 哪些技能会被处理
+### 7.6.5 哪些技能会被处理
 Curator 的自动迁移和 LLM Review 只处理同时满足这些条件的技能：
 
 - 位于本地技能目录 `~/.hermes/skills/`
@@ -752,7 +806,7 @@ hermes curator pin <skill-name>
 
 Pinned 技能不会被自动迁移到 `stale` 或 `archived`，Curator 的 LLM Review 会跳过它，Agent 的 `skill_manage delete` 也不能删除它。
 
-### 7.5.6 使用记录与报告
+### 7.6.6 使用记录与报告
 Curator 会维护一个伴随文件 `~/.hermes/skills/.usage.json`，记录非 bundled、非 Hub 技能的使用遥测和 Curator 管理标记。bundled / Hub 技能不会写入这份文件；用户手写或外部目录里的技能可能因为被查看或加载而出现使用计数，但只有带有 `created_by: "agent"` 或 `agent_created: true` 的条目才会进入 Curator 的自动迁移和 LLM Review 候选集。
 
 ```jsonc

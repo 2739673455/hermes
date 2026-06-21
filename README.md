@@ -301,14 +301,14 @@ hermes tools disable yuanbao            # 禁用 yuanbao 工具集
 终端工具支持多种后端，用于在本机、容器、远程主机或云端环境中执行命令。
 
 ### 5.3.1 后端类型
-| 后端          | 说明                                  | 适用场景                    |
-| ------------- | ------------------------------------- | --------------------------- |
-| `local`       | 在本机直接执行命令（默认）            | 本地开发、可信任务          |
-| `docker`      | 在 Docker 容器中执行命令              | 隔离运行、可复现环境        |
-| `ssh`         | 通过 SSH 在远程主机执行命令           | 远程服务器、沙箱主机        |
-| `singularity` | 在 Singularity / Apptainer 容器中执行 | HPC、集群、无 root 容器环境 |
-| `modal`       | 在 Modal 云端沙箱中执行命令           | 无服务器、弹性扩展          |
-| `daytona`     | 在 Daytona workspace 中执行命令       | 持久化云端开发环境          |
+| 后端          | 说明                            | 适用场景               |
+| ------------- | ------------------------------- | ---------------------- |
+| `local`       | 在本机直接执行命令（默认）      | 本地开发、可信任务     |
+| `docker`      | 在 Docker 容器中执行命令        | 隔离运行、可复现环境   |
+| `ssh`         | 通过 SSH 在远程主机执行命令     | 远程服务器、沙箱主机   |
+| `singularity` | 高性能计算集群容器              | 集群计算、无 root 权限 |
+| `modal`       | 在 Modal 云端沙箱中执行命令     | 无服务器、弹性扩展     |
+| `daytona`     | 在 Daytona workspace 中执行命令 | 持久化云端开发环境     |
 
 ### 5.3.2 Docker 后端配置
 ```yaml
@@ -423,26 +423,94 @@ hermes mcp remove <name>     # 移除服务器
 ```
 
 # 7. Skills
-https://hermes-agent.nousresearch.com/docs/user-guide/features/skills
+Skills 是 Agent 在需要时可以按需加载的知识文档。每个已安装的 skill 都自动作为斜杠命令可用。
 
-已安装的技能会以斜杠命令的形式提供。
+## 7.1 Skill 格式与配置
+### 7.1.1 `SKILL.md` 格式
+```markdown
+---
+name: my-skill                             # Skill 名称
+description: Brief description of what this skill does  # 简短说明
+version: 1.0.0                             # Skill 版本
+platforms: [macos, linux]                  # 可用平台
+metadata:
+  hermes:
+    tags: [python, automation]             # 标签
+    category: devops                       # 分类
+    fallback_for_toolsets: [web]           # web 工具集可用时隐藏
+    fallback_for_tools: [web_search]       # web_search 工具可用时隐藏
+    requires_toolsets: [terminal]          # terminal 工具集可用时显示
+    requires_tools: [terminal]             # terminal 工具可用时显示
+    config:
+      - key: my.setting                    # 配置键
+        description: "What this controls"  # 配置说明
+        default: "value"                   # 默认值
+        prompt: "Prompt for setup"         # 配置提示
+required_environment_variables:
+  - name: TENOR_API_KEY                    # 环境变量名
+    prompt: Tenor API key                  # 输入提示
+    help: Get a key from https://developers.google.com/tenor  # 获取方式
+    required_for: full functionality       # 用途说明
+---
+# Skill Title
+## When to Use
+Trigger conditions for this skill.
 
-## 7.1 基本操作
-https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-skills
+## Procedure
+1. Step one
+2. Step two
 
-```bash
-hermes skills list                                      # 列出已安装的技能
-hermes skills browse                                    # 浏览可用的技能
-hermes skills search honcho                             # 搜索技能
-hermes skills install honcho                            # 通过 ID 安装技能
-hermes skills install https://example.com/my-skill/SKILL.md  # 通过 URL 安装技能
-hermes skills uninstall honcho                          # 卸载技能
+## Pitfalls
+- Known failure modes and fixes
 
-/skills  # 会话内管理技能
+## Verification
+How to confirm it worked.
 ```
 
-## 7.2 技能目录结构
-所有技能默认存放在 `~/.hermes/skills/`，这是 Hermes 的主技能目录，也是本地安装、Hub 安装、Agent 创建技能的写入位置。
+常用 frontmatter 字段：
+
+| 字段                                    | 说明                       |
+| --------------------------------------- | -------------------------- |
+| `name`                                  | Skill 名称                 |
+| `description`                           | 简短说明                   |
+| `version`                               | Skill 版本                 |
+| `platforms`                             | 限制可用操作系统           |
+| `metadata.hermes.tags`                  | 标签                       |
+| `metadata.hermes.category`              | 分类                       |
+| `metadata.hermes.fallback_for_toolsets` | 仅在工具集不可用时显示技能 |
+| `metadata.hermes.fallback_for_tools`    | 仅在工具不可用时显示技能   |
+| `metadata.hermes.requires_toolsets`     | 仅在工具集可用时显示技能   |
+| `metadata.hermes.requires_tools`        | 仅在工具可用时显示技能     |
+| `metadata.hermes.config`                | 非密钥配置项声明           |
+| `required_environment_variables`        | 需要用户配置的环境变量声明 |
+
+`metadata.hermes.config` 声明的设置会在 Skill 加载时从 `config.yaml` 的 `skills.config` 下解析并注入上下文，Agent 可以直接看到已配置的值。
+
+`required_environment_variables` 已配置的环境变量会自动传递到 `execute_code` 和 `terminal` 沙箱，Skill 的脚本可以直接使用对应环境变量。
+
+### 7.1.2 输出与媒体传递
+当 Skill 或 Agent 回复中包含媒体文件的裸绝对路径时，Gateway 会自动识别并把文件作为原生附件发送到聊天平台，而不是把路径文本直接显示给用户。
+
+```text
+/home/user/screenshots/diagram.png
+```
+
+音频文件可以通过 `[[audio_as_voice]]` 指令在支持的平台上作为语音消息发送。
+
+如果需要把图片或其他媒体作为下载文件发送，而不是作为内联预览发送，可以在同一条响应中加入 `[[as_document]]`：
+
+```text
+Here is your rendered chart:
+
+/home/user/.hermes/cache/chart-q4-2025.png
+
+[[as_document]]
+```
+
+该指令会在投递前移除，用户不会看到它。同一响应中的所有媒体路径都会按文档附件方式发送。
+
+## 7.2 Skill 目录结构
+Hermes 本地 Skill 目录结构：
 
 ```text
 ~/.hermes/skills/
@@ -451,7 +519,7 @@ hermes skills uninstall honcho                          # 卸载技能
 │   │   ├── SKILL.md       # 主说明文件，必需
 │   │   ├── references/    # 额外参考资料
 │   │   ├── templates/     # 输出模板
-│   │   ├── scripts/       # 技能可调用的辅助脚本
+│   │   ├── scripts/       # 辅助脚本
 │   │   └── assets/        # 图片、数据等附加资源
 │   └── vllm/
 │       └── SKILL.md
@@ -466,20 +534,7 @@ hermes skills uninstall honcho                          # 卸载技能
 └── .bundled_manifest      # 记录内置技能同步状态
 ```
 
-`SKILL.md` 是每个技能的入口文件。`references/`、`templates/`、`scripts/`、`assets/` 都是可选目录，用来承载较长资料、固定输出格式、辅助脚本和资源文件。
-
-可以把 Skill 粗略分成三种层级：
-
-| 类型                                             | 例子                             | 含义                                                                 |
-| ------------------------------------------------ | -------------------------------- | -------------------------------------------------------------------- |
-| 普通具体 Skill                                   | `mlops/axolotl`                  | 面向某个具体工具或流程，例如 Axolotl 训练                            |
-| 总括型 Skill（umbrella Skill）                   | `mlops/training`                 | 覆盖一组相关流程，把多个具体训练经验组织到一个入口下                 |
-| 类别级总括型 Skill（class-level umbrella Skill） | `software-development/debugging` | 抽象到任务类别，例如“调试”这一类工作，而不是某次会话里的某个具体 bug |
-
-`umbrella` 强调“覆盖一组相关流程”；`class-level` 强调“抽象到任务类别”。Curator 和后台 review 更偏好把零散、狭窄、只记录一次问题的 Skill 合并成这类更通用的 Skill。
-
-## 7.3 外部技能目录
-如果团队已经有共享技能目录，比如 `~/.agents/skills/` 或公司内部 repo，可以让 Hermes 额外扫描这些目录：
+如果有其他的 Skill 目录，例如 `~/.agents/skills/`，可以让 Hermes 额外扫描这些目录：
 
 ```yaml
 # ~/.hermes/config.yaml
@@ -490,12 +545,25 @@ skills:
     - ${SKILLS_REPO}/skills
 ```
 
-外部目录支持 `~` 展开和 `${VAR}` 环境变量替换。它们的行为规则：
+本地与外部 Skill 处理规则：
 
-- **只读扫描**：Hermes 会发现外部技能，但 Agent 创建或修改技能时仍然写入 `~/.hermes/skills/`
-- **本地优先**：如果本地目录和外部目录有同名技能，本地版本优先
-- **完整集成**：外部技能会出现在技能索引、`skills_list`、`skill_view` 和 `/skill-name` 斜杠命令中
+- **本地创建，就地更新**：Agent 创建的新 Skill 写入 `~/.hermes/skills/`；已有 Skill 会在找到的位置被修改
+- **外部目录默认不会写保护**：如果外部 Skill 目录对 Hermes 进程可写，`skill_manage` 可以修改其中的文件；需要只读共享 Skill 时，应使用文件系统权限或单独的 profile / toolset 约束
+- **本地优先**：如果本地目录和外部目录有同名 Skill，本地版本优先
 - **路径可选**：不存在的外部目录会被静默跳过，适合跨机器共享配置
+
+## 7.3 常用命令
+```bash
+hermes skills list                # 列出已安装的技能
+hermes skills browse              # 浏览技能
+hermes skills search my-skill     # 搜索技能
+hermes skills install my-skill    # 通过 ID 安装技能
+hermes skills install https://share.chat/SKILL.md  # 通过 URL 安装技能（单文件 SKILL.md）
+hermes skills uninstall my-skill  # 卸载技能
+hermes skills config              # 管理技能配置
+
+/skills                           # 管理技能
+```
 
 ## 7.4 Agent-Managed Skills (skill_manage tool)
 Hermes 可以通过 `skill_manage` 工具创建、修改和删除自己的技能。这是 Agent 的「程序记忆」：当它解决了一个有复用价值的复杂问题，就可以把流程沉淀成 Skill，下次遇到类似任务时直接加载。
@@ -525,6 +593,16 @@ Hermes 可以通过 `skill_manage` 工具创建、修改和删除自己的技能
 | `delete`      | 删除技能                                        |
 | `write_file`  | 添加或更新 `references/`、`scripts/` 等支持文件 |
 | `remove_file` | 删除支持文件                                    |
+
+可以把 Skill 粗略分成三种层级：
+
+| 类型                                             | 例子                             | 含义                                                                 |
+| ------------------------------------------------ | -------------------------------- | -------------------------------------------------------------------- |
+| 普通具体 Skill                                   | `mlops/axolotl`                  | 面向某个具体工具或流程，例如 Axolotl 训练                            |
+| 总括型 Skill（umbrella Skill）                   | `mlops/training`                 | 覆盖一组相关流程，把多个具体训练经验组织到一个入口下                 |
+| 类别级总括型 Skill（class-level umbrella Skill） | `software-development/debugging` | 抽象到任务类别，例如“调试”这一类工作，而不是某次会话里的某个具体 bug |
+
+`umbrella` 强调“覆盖一组相关流程”；`class-level` 强调“抽象到任务类别”。Curator 和后台 review 更偏好把零散、狭窄、只记录一次问题的 Skill 合并成这类更通用的 Skill。
 
 ## 7.5 Curator（技能维护）
 https://hermes-agent.nousresearch.com/docs/user-guide/features/curator
@@ -1888,7 +1966,7 @@ Hermes Kanban 的设计理念可以概括为几个取舍：
 - 一个 Kanban 命令行入口
 - 一个调度器
 - 一组工作者技能 / 工具，以及 Hermes profile
- 
+
 任何复杂的协作形态、角色分工和策略，都通过 profile、技能、插件扩展。
 
 ## 16.2 架构

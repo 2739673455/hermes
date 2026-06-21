@@ -663,110 +663,76 @@ Agent 创建和更新 Skill 主要由三条路径触发：
 | `write_file`  | 添加或更新支持文件               |
 | `remove_file` | 删除支持文件                     |
 
-## 7.6 Curator（技能维护）
-https://hermes-agent.nousresearch.com/docs/user-guide/features/curator
+## 7.6 Curator (技能维护)
+每次 Agent 解决新问题并保存技能时，该技能都会落入 `~/.hermes/skills/`。若没有维护，最终可能会出现数十个范围狭窄的近似重复项，污染技能目录并浪费 token。
 
-Curator 是 Hermes 的技能维护系统，专门管理由后台自我改进 review agent 创建并标记的本地技能。它会跟踪这些技能的查看、使用和修改频率，把长期不用的技能从 `active` 推进到 `stale`，再归档到 `~/.hermes/skills/.archive/`。
+为防止通过自我改进循环创建的技能无限堆积，Curator 在后台维护 Agent 创建的技能。它：
 
-Curator 的存在是为了防止通过自我提升循环产生的技能无限累积。后台 review agent 在解决复杂问题后可能会把可复用经验保存成新的本地 Skill，并标记为 Curator 管理对象。如果不进行维护，最终会导致数十个功能相近但范围狭窄的重复技能，这些技能不仅会污染目录，还会浪费 token。
-
-如果某个技能很重要，可以把它 pin 住。Pinned 技能有三层保护：
-
-- Curator 不会把它自动迁移到 `stale` 或 `archived`
-- Curator 的 LLM Review 会跳过它
-- Agent 的 `skill_manage delete` 也不能删除它，但仍然可以 `patch` / `edit` 改进内容
+- 跟踪每个技能被查看、使用和修补的频率
+- 将长期未使用的技能按照 active → stale → archived 状态流转
+- 定期启动一个短暂的辅助模型审查，提出合并或修补建议
 
 ### 7.6.1 运行机制
-Curator 在 Hermes 启动或 Gateway 后台 tick 时检查是否满足运行条件。自动运行需要同时满足以下门槛：
+Curator 由空闲检查触发。在 Hermes 启动或 Gateway 后台 tick 时，会检查是否满足如下启动条件：
 
 - `curator.enabled` 没有被设为 `false`
 - Curator 没有被 `hermes curator pause` 暂停
 - 距离上次运行已经超过 `interval_hours`，默认 168 小时（7天）
 - Agent 已经空闲超过 `min_idle_hours`，默认 2 小时
 
-首次安装或还没有 `last_run_at` 记录时，Curator 会先写入当前时间作为基准，不会立刻自动运行。后续自动检查只有在上述门槛通过后，才会在后台创建一个 AIAgent 分支运行。用户也可以通过 `hermes curator run` 手动触发；手动运行会跳过时间间隔和空闲时长门槛，但仍要求 `curator.enabled` 没有被关闭。
+Curator 启动后会在后台创建一个 AIAgent 分支运行。
 
-每次实际运行都会按照两阶段执行：
+首次安装或还没有 `last_run_at` 记录时，Curator 不会运行，而是写入当前时间作为基准并推迟一个时间间隔。
 
-1. **自动状态迁移**：不调用 LLM。只检查 Curator 管理范围内的技能；超过 `stale_after_days` (30天) 未使用的技能变成 `stale`，超过 `archive_after_days` (90天) 未使用的技能移动到 `.archive/`。
-2. **LLM Review**：启动一个辅助模型任务，查看 Curator 管理范围内的技能，决定保留、修补、合并或归档。
+用户也可以通过 `hermes curator run` 手动触发；手动运行会跳过时间间隔和空闲时长门槛，但仍要求 `curator.enabled` 没有被关闭。
 
-**提示词：`CURATOR_REVIEW_PROMPT`**
+运行分为两个阶段：
 
-- **位置**：`agent/curator.py`
-- **作用**：指导 Curator 做 Skill 合并、归档和总括型 Skill 整理
-- **触发条件**：Curator 满足运行条件并进入 LLM Review 阶段
-
-中文大意：Curator 要整理并构建更通用的 Skill，而不只是被动审计或简单找重复项。目标是让技能库成为“类别级指令和经验知识”的库，而不是堆满只记录某次会话具体 bug 的狭窄 Skill。它的候选列表已经过滤为 Curator 管理的本地技能；它不能碰 bundled / Hub 安装的技能，不能删除技能，最多只能归档；pinned 技能完全跳过。整理时会扫描候选列表，识别前缀集群，判断这些 Skill 共同服务的任务类别，然后选择合并到已有通用 Skill、创建新的通用 Skill，或把窄技能降级成 `references/`、`templates/`、`scripts/` 支持文件。
-
-关键原文片段：
-
-```text
-You are running as Hermes' background skill CURATOR. This is an
-UMBRELLA-BUILDING consolidation pass, not a passive audit and not a
-duplicate-finder.
-
-The goal of the skill collection is a LIBRARY OF CLASS-LEVEL
-INSTRUCTIONS AND EXPERIENTIAL KNOWLEDGE.
-
-Hard rules — do not violate:
-1. DO NOT touch bundled or hub-installed skills.
-2. DO NOT delete any skill. Archiving is the maximum destructive action.
-3. DO NOT touch skills shown as pinned=yes. Skip them entirely.
-
-Three ways to consolidate:
-  a. MERGE INTO EXISTING UMBRELLA.
-  b. CREATE A NEW UMBRELLA SKILL.md.
-  c. DEMOTE TO REFERENCES/TEMPLATES/SCRIPTS.
-```
+1. **自动状态迁移**：不调用 LLM。只检查 Curator 管理范围内的技能
+   - 超过 `stale_after_days` (30天) 未使用的技能变为 `stale`，
+   - 超过 `archive_after_days` (90天) 未使用的技能移动到 `~/.hermes/skills/.archive/`
+2. **LLM Review**：启动一个辅助模型任务
+   - 查看 Curator 管理范围内的技能，决定保留、修补、合并或归档。
 
 ### 7.6.2 配置
-Curator 配置示例：
-
 ```yaml
 # ~/.hermes/config.yaml
 curator:
-  enabled: true
-  interval_hours: 168
-  min_idle_hours: 2
-  stale_after_days: 30
-  archive_after_days: 90
+  enabled: true           # 是否启用 Curator
+  interval_hours: 168     # 自动检查间隔，默认 7 天
+  min_idle_hours: 2       # Agent 空闲多久后才允许自动运行
+  stale_after_days: 30    # 多久未使用后标记为陈旧
+  archive_after_days: 90  # 多久未使用后归档
 ```
 
-Curator 的 LLM Review 可以单独指定更便宜的辅助模型进行维护任务：
+Curator 的 LLM Review 可以单独指定辅助模型：
 
 ```yaml
 # ~/.hermes/config.yaml
 auxiliary:
   curator:
-    provider: openrouter  # auto 代表使用主模型
+    provider: openrouter  # 若为 auto 则代表使用主模型
     model: google/gemini-3-flash-preview
     timeout: 600
 ```
 
 ### 7.6.3 常用命令
 ```bash
-hermes curator status                   # 查看技能状态
-hermes curator run                      # 手动运行策展
-hermes curator run --background         # 后台运行
-hermes curator run --dry-run            # 只预览，不修改技能库
-hermes curator pause                    # 暂停自动运行
-hermes curator resume                   # 恢复自动运行
-hermes curator pin my-important-skill   # 固定某个技能，防止被自动处理
-hermes curator unpin my-important-skill # 取消固定
-hermes curator restore my-skill         # 恢复已归档的技能
+hermes curator status              # 查看技能状态
+hermes curator run                 # 手动运行
+hermes curator run --background    # 后台运行
+hermes curator run --dry-run       # 只预览，不修改技能库
+hermes curator pause               # 暂停自动运行
+hermes curator resume              # 恢复自动运行
+hermes curator pin <skill-name>    # 固定某个技能，防止被自动处理
+hermes curator unpin <skill-name>  # 取消固定
+hermes curator restore my-skill    # 恢复已归档的技能
 ```
 
 同样的子命令也可以在会话中通过 `/curator` 斜杠命令使用。
 
 ### 7.6.4 备份与回滚
-每次 Curator 运行前，Hermes 会把 `~/.hermes/skills/` 打包备份到：
-
-```text
-~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz
-```
-
-如果某次维护结果不符合预期，可以回滚：
+每次 Curator 运行前，Hermes 会把 `~/.hermes/skills/` 打包备份到 `~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz`。如果某次维护结果不符合预期，可以回滚：
 
 ```bash
 hermes curator rollback                           # 恢复最新备份
@@ -786,59 +752,46 @@ curator:
     keep: 5
 ```
 
-### 7.6.5 哪些技能会被处理
-Curator 的自动迁移和 LLM Review 只处理同时满足这些条件的技能：
+### 7.6.5 Curator 处理范围
+如果某个 Skill 不属于 bundled 内置技能，也不是 Skills Hub 安装的技能，就会落入 Curator 的处理范围。
 
-- 位于本地技能目录 `~/.hermes/skills/`
-- 不在 `~/.hermes/skills/.bundled_manifest` 记录中，也就是不是 bundled 内置技能
-- 不在 `~/.hermes/skills/.hub/lock.json` 记录中，也就是不是 Skills Hub 安装的技能
-- 在 `~/.hermes/skills/.usage.json` 中被明确标记为 `created_by: "agent"` 或 `agent_created: true`
+不被 Curator 处理的 Skill：
 
-通常这指后台自我改进 review agent 通过 `skill_manage(action="create")` 创建的技能。下列技能不会因为只是存在于磁盘上就被 Curator 自动归档或合并：
+- `~/.hermes/skills/.bundled_manifest` 记录的 bundled 内置技能
+- `~/.hermes/skills/.hub/lock.json` 记录的 Skills Hub 安装技能
 
-- 用户手写的 `SKILL.md`
-- 用户明确要求前台 Agent 创建的 Skill
-- 通过 `skills.external_dirs` 暴露给 Hermes 的外部技能目录中的 Skill
-- bundled 内置技能和 Skills Hub 安装的技能
+会被视为 Curator 处理范围的 Skill：
 
-外部技能目录仍会被扫描并出现在技能索引、`skills_list`、`skill_view` 和斜杠命令中，但它们不是 Curator 的归档 / 合并对象；Curator 的归档目录也只在本地 `~/.hermes/skills/.archive/` 下。
+- Agent 通过 `skill_manage(action="create")` 创建的技能
+- 用户手写 `SKILL.md` 创建的技能
+- 通过 `skills.external_dirs` 暴露给 Hermes 的外部技能目录中的技能
 
-如果某个技能很重要，建议先执行：
+如果某个技能不希望被自动迁移、审查或归档，应使用 `hermes curator pin <skill-name>` 将其固定。技能被固定后：
 
-```bash
-hermes curator pin <skill-name>
-```
-
-Pinned 技能不会被自动迁移到 `stale` 或 `archived`，Curator 的 LLM Review 会跳过它，Agent 的 `skill_manage delete` 也不能删除它。
+- Curator 自动状态转换会跳过它，不会把它从 `active` 迁移到 `stale` 或 `archived`
+- Curator 的 LLM Review 会跳过它
+- Agent 的 `skill_manage(action="delete")` 会拒绝删除它，并提示先运行 `hermes curator unpin <name>`
+- `patch` 和 `edit` 仍然允许，因此 Agent 仍可修补已固定技能的内容
 
 ### 7.6.6 使用记录与报告
-Curator 会维护一个伴随文件 `~/.hermes/skills/.usage.json`，记录非 bundled、非 Hub 技能的使用遥测和 Curator 管理标记。bundled / Hub 技能不会写入这份文件；用户手写或外部目录里的技能可能因为被查看或加载而出现使用计数，但只有带有 `created_by: "agent"` 或 `agent_created: true` 的条目才会进入 Curator 的自动迁移和 LLM Review 候选集。
+Curator 会维护一个伴随文件 `~/.hermes/skills/.usage.json` 记录使用遥测。每个技能对应一条记录：
 
 ```jsonc
 {
   "my-skill": {
-    "created_by": "agent",                  // agent 表示进入 Curator 管理范围；null 表示只记录遥测
-    "use_count": 12,                         // 被加载到对话 prompt 的次数
-    "view_count": 34,                        // Agent 调用 skill_view 查看该技能的次数
-    "last_used_at": "2026-04-24T18:12:03Z",  // 最近一次被加载到对话的时间
-    "last_viewed_at": "2026-04-23T09:44:17Z",// 最近一次被 skill_view 查看时间
-    "patch_count": 3,                        // 被 skill_manage 修改的次数
-    "last_patched_at": "2026-04-20T22:01:55Z",// 最近一次被修改时间
-    "created_at": "2026-03-01T14:20:00Z",    // 技能创建时间
-    "state": "active",                       // 当前状态：active / stale / archived
-    "pinned": false,                         // 是否被固定，固定后不会被自动归档
-    "archived_at": null                      // 归档时间，未归档时为 null
+    "use_count": 12,                          // Agent 加载该技能的次数
+    "view_count": 34,                         // Agent 查看该技能的次数
+    "last_used_at": "2026-04-24T18:12:03Z",   // 最近一次加载时间
+    "last_viewed_at": "2026-04-23T09:44:17Z", // 最近一次查看时间
+    "patch_count": 3,                         // 被 skill_manage 修改的次数
+    "last_patched_at": "2026-04-20T22:01:55Z",// 最近一次修改时间
+    "created_at": "2026-03-01T14:20:00Z",     // 技能创建时间
+    "state": "active",                        // 当前状态
+    "pinned": false,                          // 是否被固定
+    "archived_at": null                       // 归档时间，未归档时为 null
   }
 }
 ```
-
-计数器递增规则：
-
-- `view_count`：Agent 对该技能调用 `skill_view`
-- `use_count`：该技能被加载到对话 prompt 中
-- `patch_count`：`skill_manage patch/edit/write_file/remove_file` 作用于该技能
-
-内置技能和通过 Skills Hub 安装的技能不会写入这份文件，也不参与 Curator 的 stale / archive 判断。Curator 不需要为它们维护使用统计，因为它们由 bundled 同步或 Hub lock 管理，而不是由 Curator 维护生命周期。
 
 每次 Curator 运行后，都会在 `~/.hermes/logs/curator/` 下写入一个带时间戳的目录：
 
@@ -846,7 +799,7 @@ Curator 会维护一个伴随文件 `~/.hermes/skills/.usage.json`，记录非 b
 ~/.hermes/logs/curator/
 └── 20260429-111512/
     ├── run.json      # 机器可读：完整数据、统计信息、LLM 输出
-    └── REPORT.md     # 人类可读：本次运行摘要
+    └── REPORT.md     # 人类可读：运行摘要
 ```
 
 # 8. Hooks

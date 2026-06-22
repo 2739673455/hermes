@@ -1432,38 +1432,62 @@ hermes profile use default  # 恢复默认 Profile 为 default
 Profile 使用 `HERMES_HOME` 环境变量。运行 `coder chat` 时，包装脚本会在启动 Hermes 前设置 `HERMES_HOME=~/.hermes/profiles/coder`。代码中通过 `get_hermes_home()` 解析路径，把 Hermes 状态限定在对应 Profile 目录下，包括配置、会话、记忆、技能、状态数据库、Gateway PID、日志和定时任务。
 
 # 14. Cron
-https://hermes-agent.nousresearch.com/docs/user-guide/features/cron
+Hermes 通过 `cronjob` 工具管理定时任务，可以用自然语言、cron 表达式调度自动运行的任务。
 
-Hermes 内置定时任务系统，可以用自然语言、cron 表达式安排任务。
-
-定时任务通过 Gateway daemon 执行：Gateway 每 60 秒 tick 一次，检查到期任务。为每个到期任务启动一个新的 Agent 会话执行 prompt，然后投递最终结果。
-
-Cron 运行时会禁用 cron 管理工具，避免递归创建更多定时任务造成调度循环。
+定时任务运行时会禁用 cron 管理工具，避免递归创建更多定时任务造成调度循环。
 
 ## 14.1 创建任务
-可在会话中通过 `/cron`，或使用 CLI 命令 `hermes cron` 来创建定时任务。
+可在会话中通过 `/cron`，或使用 CLI 命令 `hermes cron` 创建定时任务，也可以通过自然语言让 Hermes Agent 创建任务。
 
 ```bash
 /cron add 30m "提醒我检查构建结果"
 /cron add "every 2h" "检查服务器状态"
 /cron add "every 1h" "总结新动态" --skill blogwatcher
-/cron add "every 1h" "加载两个技能并合并结果" --skill blogwatcher --skill maps
 
 hermes cron create "every 2h" "检查服务器状态"
 hermes cron create "every 1h" "总结新动态" --skill blogwatcher
-hermes cron create "every 1h" "加载两个技能并合并结果" \
-  --skill blogwatcher \
-  --skill maps \
-  --name "Skill combo"
+
+"每天早上 9 点检查 Hacker News 上的 AI 新闻，然后发一份摘要到 Telegram。"
 ```
 
-也可以直接用自然语言让 Hermes 创建，例如：
+`/cron add` 和 `hermes cron create` 都支持的常用选项：
 
-```text
-每天早上 9 点检查 Hacker News 上的 AI 新闻，然后发一份摘要到 Telegram。
+| 选项        | 说明                                                     |
+| ----------- | -------------------------------------------------------- |
+| `--name`    | 设置任务名称                                             |
+| `--deliver` | 设置投递目标，如 `local`、`telegram`、`platform:chat_id` |
+| `--repeat`  | 设置重复次数                                             |
+| `--skill`   | 附加 skill，可重复传递                                   |
+
+`hermes cron create` 独有选项：
+
+| 选项         | 说明                                       |
+| ------------ | ------------------------------------------ |
+| `--script`   | 指定 `~/.hermes/scripts/` 下的脚本         |
+| `--no-agent` | 跳过 LLM，运行脚本并直接投递 stdout        |
+| `--workdir`  | 指定任务运行目录，并注入该目录的上下文文件 |
+
+对于不需要 LLM 推理的任务（例如监控程序、磁盘 / 内存警报、心跳检测、CI ping 等），可在创建任务时使用 `--no-agent`。调度程序会运行脚本并直接输出其标准输出，完全跳过 Agent：
+
+```bash
+hermes cron create "every 5m" \
+  --no-agent \
+  --script memory-watchdog.sh \
+  --deliver telegram \
+  --name "memory-watchdog"
 ```
 
-Hermes 会在内部调用 `cronjob` 工具完成创建：
+脚本必须放在 `~/.hermes/scripts/`。`.sh`、`.bash` 用 `/bin/bash` 执行，其他脚本在当前 Python 解释器（sys.executable）下运行。
+
+脚本运行默认超时时间是 120 秒，可以通过配置调整：
+
+```yaml
+# ~/.hermes/config.yaml
+cron:
+  script_timeout_seconds: 300
+```
+
+Hermes 通过自然语言创建任务时，会在内部调用 `cronjob` 工具，常见字段示例：
 
 ```text
 cronjob(
@@ -1478,27 +1502,50 @@ cronjob(
     context_from=[],
     script=None,
     no_agent=False,
-    profile=None,
     enabled_toolsets=["web"],
 )
 ```
 
-默认情况下，定时任务会从网关启动时的工作目录运行，可通过传递 `--workdir` 来更改工作目录。设置了 `workdir` 时，该目录内的上下文文件会被注入系统提示词：
+任务存储在 `~/.hermes/cron/jobs.json`，运行输出会保存到 `~/.hermes/cron/output/{job_id}/{timestamp}.md`。
+
+## 14.2 管理任务
+可在会话中通过 `/cron`，或使用 CLI 命令 `hermes cron` 查看、编辑、暂停、恢复、触发和删除定时任务。
 
 ```bash
-hermes cron create "every 1d at 09:00" "审查打开的 PR，总结 CI 健康状况，并发布到 #eng 频道" \
-  --workdir /home/me/projects/acme
+/cron list                                             # 查看启用中的定时任务
+/cron list --all                                       # 查看所有任务，包括已暂停的任务
+/cron edit <job_id> --schedule "every 4h"              # 修改调度时间
+/cron edit <job_id> --prompt "使用新的任务说明"          # 修改任务说明
+/cron edit <job_id> --name "新的任务名"                 # 修改任务名称
+/cron edit <job_id> --deliver telegram,discord        # 修改投递目标
+/cron edit <job_id> --repeat 5                        # 设置重复次数
+/cron edit <job_id> --skill blogwatcher --skill maps  # 替换当前任务的技能列表
+/cron edit <job_id> --add-skill maps                  # 追加技能
+/cron edit <job_id> --remove-skill blogwatcher        # 移除指定技能
+/cron edit <job_id> --clear-skills                    # 清空所有技能
+/cron pause <job_id>                                  # 暂停任务
+/cron resume <job_id>                                 # 恢复任务
+/cron run <job_id>                                    # 下一个 scheduler tick 触发任务
+/cron remove <job_id>                                 # 删除任务
+
+hermes cron list/create/edit/pause/resume/run/remove
+hermes cron edit <job_id> --script watch-site.py      # 设置脚本输入
+hermes cron edit <job_id> --script ""                 # 清除脚本
+hermes cron edit <job_id> --no-agent                  # 启用 no-agent 模式
+hermes cron edit <job_id> --agent                     # 恢复 Agent 执行模式
+hermes cron edit <job_id> --workdir /home/me/projects/acme  # 修改运行目录
+hermes cron edit <job_id> --workdir ""                # 清除运行目录
+hermes cron status                                    # 查看 Gateway 和 cron 状态
+hermes cron tick                                      # 手动运行一次到期任务检查
 ```
 
-## 14.2 调度格式
-常用格式：
-
+## 14.3 调度格式
 | 类型        | 示例                                      | 行为                 |
 | ----------- | ----------------------------------------- | -------------------- |
 | 相对延迟    | `30m`、`2h`、`1d`                         | 一次性运行           |
-| 循环间隔    | `every 30m`、`every 2h`、`every 1d`       | 持续重复运行         |
+| 循环间隔    | `every 30m`、`every 2h`、`every 1d`       | 周期性运行           |
 | Cron 表达式 | `0 9 * * *`、`0 9 * * 1-5`、`0 */6 * * *` | 按 cron 规则重复运行 |
-| ISO 时间    | `2026-03-15T09:00:00`                     | 指定时间运行一次     |
+| ISO 时间    | `2026-03-15T09:00:00`                     | 运行一次             |
 
 Cron 表达式格式为 `分 时 日 月 周`，例如：
 
@@ -1507,45 +1554,32 @@ Cron 表达式格式为 `分 时 日 月 周`，例如：
 - `0 */6 * * *` 每 6 小时执行
 - `30 8 1 * *` 每月 1 日 8:30 执行
 
-## 14.3 管理任务
-可在会话中通过 `/cron`，或使用 CLI 命令 `hermes cron` 来管理定时任务。
+## 14.4 工作原理
+定时任务的执行通过 Gateway 守护进程处理，Gateway 每 60 秒 tick 一次调度器，每次 tick 时：
 
-```bash
-/cron list                                             # 查看定时任务
-/cron list --all                                       # 查看所有任务，包括已暂停的任务
-/cron edit <job_id> --schedule "every 4h"              # 修改调度时间
-/cron edit <job_id> --prompt "使用新的任务说明"          # 修改任务说明
-/cron edit <job_id> --skill blogwatcher --skill maps  # 替换当前任务的技能列表
-/cron edit <job_id> --add-skill maps                  # 追加技能
-/cron edit <job_id> --remove-skill blogwatcher        # 移除指定技能
-/cron edit <job_id> --clear-skills                    # 清空所有技能
-/cron edit <job_id> --repeat 5                        # 设置重复次数
-/cron pause <job_id>                                  # 暂停任务
-/cron resume <job_id>                                 # 恢复任务
-/cron run <job_id>                                    # 下一个 scheduler tick 触发任务
-/cron remove <job_id>                                 # 删除任务
+- 从 `~/.hermes/cron/jobs.json` 加载任务
+- 对照当前时间检查任务是否需要运行
+- 为每个到期任务启动全新的 `AIAgent` 会话
+- 可选地将一个或多个已附加的 `skill` 注入该新会话
+- 将 `prompt` 运行至完成
+- 投递最终响应
+- 更新运行元数据和下次调度时间
 
-hermes cron status     # 查看调度器状态
-hermes cron tick       # 手动触发一次 scheduler tick
-```
-
-任务存储在 `~/.hermes/cron/jobs.json`，运行输出会保存到 `~/.hermes/cron/output/{job_id}/{timestamp}.md`。
-
-## 14.4 运行结果投递方式
-`deliver` 控制定时任务运行完成后，把 Agent 的最终回复或失败错误通知发送到哪里。无论是否外部投递，运行输出都会保存到 `~/.hermes/cron/output/{job_id}/{timestamp}.md`。
+## 14.5 结果投递
+`deliver` 控制定时任务运行完成后，把任务的最终结果或失败错误通知发送到哪里。
 
 常见投递目标：
 
-| deliver                        | 说明                                           |
-| ------------------------------ | ---------------------------------------------- |
-| `origin`                       | 回到创建任务的聊天来源，消息平台默认值         |
-| `local`                        | 只保存到本地文件，CLI 默认值                   |
-| `telegram`、`discord`、`slack` | 投递到对应平台的 home channel                  |
-| `telegram:123456`              | 投递到指定 Telegram chat ID                    |
-| `discord:#engineering`         | 投递到指定 Discord 频道                        |
-| `all`                          | 投递到所有已配置 home channel 的平台           |
-| `telegram,discord`             | 投递到多个指定平台                             |
-| `origin,all`                   | 投递到来源聊天，并 fan out 到所有 home channel |
+| deliver                        | 说明                                   |
+| ------------------------------ | -------------------------------------- |
+| `origin`                       | 回到创建任务的聊天来源，消息平台默认值 |
+| `local`                        | 只保存到本地文件，CLI 默认值           |
+| `telegram`、`discord`、`slack` | 投递到对应平台的 home channel          |
+| `telegram:123456`              | 投递到指定 Telegram chat ID            |
+| `discord:#engineering`         | 投递到指定 Discord 频道                |
+| `all`                          | 投递到所有已配置 home channel 的平台   |
+| `telegram,discord`             | 投递到多个指定平台                     |
+| `origin,all`                   | 投递到来源聊天加上所有其他已连接频道   |
 
 示例：
 
@@ -1566,7 +1600,7 @@ Cronjob Response: Morning feeds
 Note: The agent cannot see this message, and therefore cannot respond to it.
 ```
 
-可以关闭包装：
+可以在配置中关闭包装：
 
 ```yaml
 # ~/.hermes/config.yaml
@@ -1581,72 +1615,54 @@ Check if nginx is running. If everything is healthy, respond with only [SILENT].
 Otherwise, report the issue.
 ```
 
-## 14.5 No-agent 模式
-对于不需要 LLM 推理的周期性任务（例如经典的监控程序、磁盘/内存警报、心跳检测、CI ping 等），可在创建任务时传递 `no_agent=True` 参数。调度程序会按计划运行脚本并直接输出其标准输出，完全跳过 Agent：
-
-```bash
-hermes cron create "every 5m" \
-  --no-agent \
-  --script memory-watchdog.sh \
-  --deliver telegram \
-  --name "memory-watchdog"
-```
-脚本必须放在 `~/.hermes/scripts/` 中。`.sh` / `.bash` 用 `/bin/bash` 执行，其他脚本用当前 Python 解释器执行。
-
-脚本运行默认超时时间是 120 秒，可以通过配置调整：
-
-```yaml
-# ~/.hermes/config.yaml
-cron:
-  script_timeout_seconds: 300
-```
-
-## 14.6 使用 context_from 链接作业
-Cron 任务彼此之间默认是隔离的：每次运行都是新的 Agent 会话，不会自动知道其他任务上次输出了什么。`context_from` 用来把一个任务的最新输出接到另一个任务的 prompt 前面。
-
-> 注意：`context_from` 只能由 Agent 通过 `cronjob` 工具设置，`hermes cron create` 和 `hermes cron edit` CLI 命令均不支持该参数。创建依赖链时必须让 Agent 来操作。
-
-典型流程：
-
-```text
-Job 1：收集原始数据
-Job 2：读取 Job 1 的最新输出，筛选 / 排序
-Job 3：读取 Job 2 的最新输出，生成最终报告并投递
-```
+## 14.6 通过 context_from 串联任务
+Cron 任务彼此之间默认隔离：每次运行都是新的 Agent 会话。`context_from` 用来把一个任务的最新输出接到另一个任务的 prompt 前面。
 
 示例：
 
 ```text
-# Job 1：收集 AI 新闻
-cronjob(action="create",
-        name="ai-news-fetch",
-        schedule="0 7 * * *",
-        prompt="Fetch the top 10 AI/ML stories from Hacker News.")
+# 任务 1：收集原始数据
+cronjob(
+    action="create",
+    prompt="Fetch the top 10 AI/ML stories from Hacker News. Save them to ~/.hermes/data/briefs/raw.md in markdown format with title, URL, and score.",
+    schedule="0 7 * * *",
+    name="AI News Collector",
+)
 
-# Job 2：使用 Job 1 的最新输出做筛选
-# Job ID 可通过 cronjob(action="list") 查询
-cronjob(action="create",
-        name="ai-news-rank",
-        schedule="30 7 * * *",
-        context_from="<job1_id>",
-        prompt="Score each story for novelty and engagement. Keep the top 5.")
+# 任务 2：分类——接收任务 1 的输出作为上下文
+# 从 cronjob(action="list") 获取任务 1 的 ID
+cronjob(
+    action="create",
+    prompt="Read ~/.hermes/data/briefs/raw.md. Score each story 1–10 for engagement potential and novelty. Output the top 5 to ~/.hermes/data/briefs/ranked.md.",
+    schedule="30 7 * * *",
+    context_from="<job1_id>",
+    name="AI News Triage",
+)
 
-# Job 3：使用 Job 2 的最新输出生成日报
-cronjob(action="create",
-        name="ai-news-brief",
-        schedule="0 8 * * *",
-        context_from="<job2_id>",
-        prompt="Write a concise daily brief and deliver it to Telegram.")
+# 任务 3：发布——接收任务 2 的输出作为上下文
+cronjob(
+    action="create",
+    prompt="Read ~/.hermes/data/briefs/ranked.md. Write 3 tweet drafts (hook + body + hashtags). Deliver to telegram:7976161601.",
+    schedule="0 8 * * *",
+    context_from="<job2_id>",
+    name="AI News Brief",
+)
 ```
 
 `context_from` 支持单个 job ID 或多个 job ID：
 
-| 写法         | 示例                              |
+| 格式         | 示例                              |
 | ------------ | --------------------------------- |
 | 单个上游任务 | `context_from="a1b2c3d4"`         |
 | 多个上游任务 | `context_from=["job_a", "job_b"]` |
 
-多个上游输出会按列表顺序拼接。运行时 Hermes 会读取上游任务在 `~/.hermes/cron/output/{job_id}/` 下最近一次完成的输出，拼接到下游任务的 prompt 前面；每个上游输出在注入前会被截断至 8,000 字符（超出部分以 `[... output truncated ...]` 标记），避免 prompt 过度膨胀。
+多个上游输出会按列表顺序拼接。
+
+运行时 Hermes 会读取上游任务在 `~/.hermes/cron/output/{job_id}/` 下最近一次完成的输出，拼接到下游任务的 prompt 前。
+
+每个上游输出在注入前会被截断至 8,000 字符（超出部分以 `[... output truncated ...]` 标记），避免 prompt 过度膨胀。
+
+> 注意：`context_from` 只能由 Agent 通过 `cronjob` 工具设置。
 
 > 注意：`context_from` 读取的是上游任务「最近一次已完成输出」，不会等待同一个 tick 中仍在运行的上游任务。如果上游本次运行还没结束、下游已经触发，下游会拿到上游上一次完成的结果。需要强依赖同一批数据时，应把上下游任务错开足够长的时间，或把多个步骤合并到同一个 cron prompt / 脚本里串行执行。
 

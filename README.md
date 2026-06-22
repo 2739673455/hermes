@@ -1325,56 +1325,50 @@ gateway:
 在任意平台使用 `/whoami` 可以查看当前作用域、自己的权限层级以及可运行的斜杠命令。
 
 # 13. Profile
-https://hermes-agent.nousresearch.com/docs/user-guide/profiles
+通过 Profile 能够创建并运行多个独立的 Agent，每个 Agent 有独立的配置、会话、记忆、技能、定时任务，状态数据库和 Gateway。
 
-通过 Profile 运行多个独立的 Hermes Agent，每个 Agent 有独立的配置、会话、技能和记忆。
-
-## 13.1 什么是 Profile
-Profile 是一个独立的 Hermes home 目录。其中包含各自的 `config.yaml`、`.env`、`SOUL.md`、记忆、会话、技能、cron 任务、状态数据库和 Gateway 状态。
-
-通过 Profile 可以运行用于不同用途的 Agent 而不会混淆 Hermes 状态。
-
-创建 Profile 后，Hermes 会自动生成同名命令别名。例如创建 `coder` 后，可以直接使用 `coder chat`、`coder setup`、`coder gateway start`，本质上等价于 `hermes -p coder ...`。
-
-## 13.2 创建 Profile
+## 13.1 常用命令
 ```bash
-hermes profile create coder                     # 创建空白 Profile，会生成同名命令别名，内置技能会初始化
-hermes profile create coder --description "负责阅读源码、实现已明确的代码修改、修复测试或构建问题、运行必要验证，并在完成后汇报改动、测试结果和剩余风险"                             # 创建带描述的 Profile
-hermes profile create coder --clone             # 克隆当前 Profile 的 config.yaml、.env、SOUL.md，不复制会话和记忆
-hermes profile create backup --clone-all        # 克隆完整状态：配置、API key、人格、记忆、会话、技能、cron、plugins
+hermes profile create coder                 # 创建全新 Profile
+hermes profile create coder --description "负责阅读源码、实现已明确的代码修改、修复测试或构建问题、运行必要验证，并在完成后汇报改动、测试结果和剩余风险"  # 创建带描述的 Profile
+hermes profile create coder --clone         # 克隆当前 Profile 的 config.yaml、.env、SOUL.md、Skill，不复制会话和记忆
+hermes profile create backup --clone-all    # 克隆完整状态：配置、API key、人格、记忆、会话、技能、定时任务、插件
 hermes profile create coder --clone --clone-from backup  # 从指定 Profile 克隆
-hermes profile describe coder --text "..."      # 为 Profile 添加描述
-hermes profile describe coder --auto            # 用辅助模型自动生成 Profile 描述
-hermes profile delete coder                     # 删除 Profile
+hermes profile describe coder --text "..."  # 为 Profile 添加描述
+hermes profile describe coder --auto        # 用辅助模型自动生成 Profile 描述
+hermes profile delete coder                 # 删除 Profile
+hermes profile list                         # 显示所有 profile 及其状态
+hermes profile show coder                   # 显示某个 profile 的详细信息
+hermes profile rename coder dev-bot         # 重命名（同步更新别名和服务）
+hermes profile export coder                 # 导出为 coder.tar.gz
+hermes profile import coder.tar.gz          # 从归档文件导入
 ```
 
-## 13.3 使用 Profile
-每个 Profile 都会自动生成同名命令别名，位置通常是 `~/.local/bin/<profile-name>`。
+## 13.2 使用 Profile
+每个 Profile 都会自动生成同名命令别名，位置在 `~/.local/bin/<profile-name>`。
 
 例如创建 `coder` 后：
 
 ```bash
-coder chat                                      # 启动 coder profile 的交互式对话
-coder setup                                     # 运行 coder profile 的初始化 / 配置向导
-coder gateway start                             # 启动 coder profile 的 Gateway 服务
-coder doctor                                    # 检查 coder profile 的健康状态
-coder skills list                               # 查看 coder profile 已安装的 skills
+coder chat           # 启动 coder profile 的交互式对话
+coder setup          # 运行 coder profile 的初始化 / 配置向导
+coder gateway start  # 启动 coder profile 的 Gateway 服务
+coder doctor         # 检查 coder profile 的健康状态
+coder skills list    # 查看 coder profile 已安装的 skills
 coder config set model.default anthropic/claude-sonnet-4  # 修改 coder profile 的默认模型
 ```
 
-这个别名本质上等价于 `hermes -p <name>`。也可以显式指定 Profile：`hermes -p coder chat`。
+这个别名实质等价于 `hermes -p <name>`，例如 `hermes -p coder chat`。
 
-如果希望普通 `hermes` 命令默认指向某个 Profile：
+可将 `hermes` 命令默认指向某个 Profile：
 
 ```bash
 hermes profile use coder    # 默认使用 coder Profile
-hermes                      # 现在默认使用 coder
+hermes chat                 # 现在默认使用 coder
 hermes profile use default  # 恢复默认 Profile 为 default
 ```
 
-每个 Profile 都可以作为独立进程运行自己的 Gateway，并拥有自己的 bot token。
-
-## 13.4 工作原理
+## 13.3 工作原理
 Profile 使用 `HERMES_HOME` 环境变量。运行 `coder chat` 时，包装脚本会在启动 Hermes 前设置 `HERMES_HOME=~/.hermes/profiles/coder`。代码中通过 `get_hermes_home()` 解析路径，把 Hermes 状态限定在对应 Profile 目录下，包括配置、会话、记忆、技能、状态数据库、Gateway PID、日志和定时任务。
 
 # 14. Cron

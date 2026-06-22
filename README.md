@@ -1768,95 +1768,66 @@ Kanban 覆盖了 `delegate_task` 无法覆盖的工作场景：
 - 人类或其他 Agent 介入
 - 任务完成后可审计
 
-### 16.1.2 其他系统的设计方案
-#### 16.1.2.1 Cline Kanban
-Cline Kanban 的形态是本地任务板：一个任务是一张卡片，每张卡片对应一个临时 git 工作树，并可以分配给不同命令行 Agent。卡片可以连成依赖链，父任务完成后子任务自动启动。
+### 16.1.2 核心形态
+Hermes Kanban 是所有 Hermes profile 共享的持久化任务看板。默认 board 的数据存储在 `~/.hermes/kanban.db`；任务、依赖、评论、认领、心跳和执行记录都写入 SQLite。每个 worker 都是一个具名 profile 启动的完整 OS 进程，拥有自己的配置、记忆和工作目录。
 
-它的启发是：**任务板 + 依赖链接 + 工作目录** 本身就足以构成一个有效的协调层。它没有账号系统、服务器基础设施、复杂治理，也不强调长期 Agent 身份。这个模型简单有效，但偏代码任务：git 工作树是核心假设，非代码工作和长期身份不是主要目标。
+Kanban 有两类操作入口：
 
-#### 16.1.2.2 Paperclip
-Paperclip 把 Agent 建模成公司里的“员工”：有组织结构图、预算、治理、目标任务图、心跳、执行记录和每 Agent 的 API key 轮换。它强调持久 Agent 身份和原子任务认领，Agent 运行时也可以是 OpenClaw、Claude Code、Codex、Cursor、bash 或 HTTP。
+- 用户、脚本和 cron 通过 `hermes kanban ...`、`/kanban ...` 或 Dashboard 创建、查看和管理任务
+- Agent 通过 `kanban_*` 工具读取任务、追加评论、发送心跳、创建子任务、阻塞任务或完成任务
 
-它的启发是：长期协作需要持久身份、原子认领和可恢复任务。但它也展示了另一端的复杂度：预算、审批、治理、组织架构对企业场景有价值，但不一定应该进入 Hermes 的协作内核。对多数用户来说，这些更适合做成 profile 约定或插件。
+调度器定期扫描 board，推进依赖已满足的任务，原子认领可运行任务，并启动对应 profile worker。所有交接都通过 board 完成，profile 之间不依赖进程内通信。
 
-#### 16.1.2.3 NanoClaw Agent Swarms
-NanoClaw Agent Swarms 基于 Claude Code 的实验性 agent teams 能力，让主 Agent 在容器中编排多个子 Agent。
+Kanban 的核心对象包括：
 
-它的启发是：不要把协作生命周期完全绑定在外部 SDK 的会话分支、resume 语义或临时子 Agent 生命周期上。协调层必须在 Hermes 自己控制的层里；工作者应该是独立操作系统进程，失败、崩溃、超时或主机重启后都可以通过任务板和认领机制恢复。
-
-#### 16.1.2.4 三者比较分析
-| 维度     | Cline Kanban              | Paperclip               | NanoClaw Swarms          |
-| -------- | ------------------------- | ----------------------- | ------------------------ |
-| 形态     | 本地任务板                | 服务器 + UI + 公司模型  | SDK 进程内团队           |
-| 任务粒度 | 一张卡片一个 git 工作树   | 目标 → 项目 → issue     | 团队负责人 fork 子 Agent |
-| 身份     | 卡片级匿名执行            | 持久“员工”              | 每次启动都是匿名         |
-| 持久性   | DB + git 工作树           | 中央服务器 DB           | 绑定 `query()` 生命周期  |
-| 依赖     | 已链接卡片                | issue 链接 / 阻塞关系   | 没有明确依赖模型         |
-| 治理     | 基本没有                  | 预算、审批、审计日志    | 基本没有                 |
-| 失败模式 | 崩溃工作者留下 git 工作树 | 崩溃 Agent 变成孤儿任务 | 子 Agent 静默终止        |
-| 协调介质 | git + 卡片状态            | DB + 心跳 + tickets     | SDK 消息传递             |
-
-Cline 的简单任务板形态是有效的，但偏代码任务；Paperclip 的持久身份和原子认领很有价值，但企业治理过重；NanoClaw 进程内群体协作对上游生命周期太敏感。Hermes Kanban 取它们的交集：任务板、依赖链接、工作目录、持久身份、原子认领；同时避免企业治理内核化和 SDK 群体协作脆弱性。
-
-### 16.1.3 Hermes Kanban 的设计理念
-Hermes Kanban 的设计理念可以概括为几个取舍：
-
-- 采用 Cline 的任务板 + 依赖链接 + 工作目录形态
-- 采用 Paperclip 的原子认领和持久身份，但把身份映射到 Hermes profile
-- 拒绝 NanoClaw 式进程内子 Agent 群体协作，每个工作者都是完整操作系统进程
-- 拒绝把 Paperclip 的治理控制面做进内核
-
-最终目标是一个轻量但稳固的协作内核：
-
-- 一个 SQLite 任务板
-- 一个 Kanban 命令行入口
-- 一个调度器
-- 一组工作者技能 / 工具，以及 Hermes profile
-
-任何复杂的协作形态、角色分工和策略，都通过 profile、技能、插件扩展。
+- `Board`：独立任务队列，拥有自己的 SQLite DB、工作区目录和调度循环
+- `Task`：任务记录，包含标题、正文、受让 profile、状态、租户和幂等键等信息
+- `Link`：任务依赖关系，父任务完成后子任务可进入 ready 状态
+- `Comment`：人类和 Agent 之间的持久交接记录
+- `Workspace`：worker 执行任务的目录，可为 scratch、固定目录或 git worktree
+- `Dispatcher`：负责回收过期认领、推进 ready 任务、原子认领和启动 worker
 
 ## 16.2 架构
-![hermes kanban architecture](images/hermes_kanban_architecture.png)
+三层架构：
+
+- 控制层：用户交互入口，包括 CLI、Gateway 和 Dashboard
+- 状态层：任务板和调度器
+- 执行层：多个相互独立的 Agent 进程
 
 ```text
 CONTROL
 +------------------------------+
 | USER                         |
-| CLI / Telegram / Discord ... |
+| CLI / Telegram / Discord     |
 +------------------------------+
-        |
-        | /kanban create | list | comment
-        v
+       |
+       | /kanban create | list | comment
+       v
 
 STATE
-+------------------+   read/write   +--------------------------+
-| kanban.db        | -------------> | DISPATCHER (cron, 60s)  |
-| SQLite (WAL)     |                | 1. recompute READY      |
-+------------------+                | 2. atomic claim (CAS)   |
-        ^                           | 3. spawn worker         |
-        |                           +--------------------------+
-        | complete                        . . .|. . . .
-        |                               .      |      .
-        |                            spawn   spawn    . poll / spawn
-        |                             .        v       v
++--------------+  read/write  +-------------------------+
+| kanban.db    | -----------> | DISPATCHER (cron, 60s)  |
+| SQLite (WAL) |              | 1. recompute READY      |
++--------------+              | 2. atomic claim (CAS)   |
+      ^                       | 3. spawn worker         |
+      |                       +-------------------------+
+      |                                  |
+      | complete                         | spawn
+      |                                  v
 
 EXECUTION
-+-------------+   +------------+   +---------------+   +-------------+
-| planner     |   | researcher |   | inbox-triage  |   | backend-eng |
-| own home    |   | scratch    |   | dir: ~/Mail   |   | worktree    |
-+-------------+   +------------+   +---------------+   +-------------+
-        ^             ^              ^
-        |             |              |
-        +-------------+--------------+
++-------------------------------------------------+
+| +------------------+   +--------------------+   |
+| | planner          |   | researcher         |   |
+| | own $HERMES_HOME |   | workspace: scratch |   |
+| +------------------+   +--------------------+   |
+|                                                 |
+| +-------------------+  +---------------------+  |
+| | inbox-triage      |  | backend-eng         |  |
+| | workspace: ~/Mail |  | workspace: worktree |  |
+| +-------------------+  +---------------------+  |
++-------------------------------------------------+
 ```
-
-三层架构：
-
-- 控制层是用户交互入口，包括 CLI、Gateway 和 Dashboard
-- 状态层是任务板和简易调度器
-- 执行层是一组相互独立的 profile 进程，每个进程都有隔离状态
-
-所有协调都通过任务板流转，profile 之间没有直接的进程间通信。
 
 ### 16.2.1 Control Plane：CLI / Gateway / Dashboard
 控制层是用户与 Kanban 交互的入口。用户通过 CLI、Gateway 或 Dashboard 把工作交给 Kanban，查看当前进展，补充人工反馈，并根据执行结果决定下一步。

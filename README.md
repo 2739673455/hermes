@@ -1000,9 +1000,7 @@ hermes plugins disable <name>     # 禁用插件
 ```
 
 # 10. 持久记忆
-https://hermes-agent.nousresearch.com/docs/zh-Hans/user-guide/features/memory
-
-Hermes Agent 的持久记忆有明确容量上限，由 Agent 自行维护。它会跨会话保存用户偏好、项目环境和经验教训。
+Hermes Agent 拥有持久记忆。记忆有容量上限，且由 Agent 自行维护。它会跨会话保存用户偏好、项目环境和经验教训。
 
 ## 10.1 内置记忆
 内置记忆由两个文件组成，存储在 `~/.hermes/memories/`：
@@ -1075,22 +1073,6 @@ memory(
 | `memory` | Agent 的个人笔记：环境事实、项目约定、经验教训 |
 | `user`   | 用户档案：用户偏好、沟通风格、期望和习惯       |
 
-`memory` 适合保存：
-
-- 环境事实，例如操作系统、工具安装情况、项目结构
-- 项目约定和配置
-- 工具使用注意事项和变通方法
-- 已完成任务的日记条目
-- 有效的技能和技术
-
-`user` 适合保存：
-
-- 姓名、角色、时区
-- 沟通偏好，例如简洁或详细
-- 用户反感的事项和需要避免的内容
-- 工作流习惯
-- 技术水平
-
 应该主动保存到记忆中的内容：
 
 - 用户偏好：例如「用户偏好 TypeScript 而不是 JavaScript」
@@ -1135,8 +1117,6 @@ memory(
 | Token 成本 | 每个会话固定占用少量上下文         | 返回的消息片段占用上下文       |
 
 ## 10.5 外部记忆提供商
-https://hermes-agent.nousresearch.com/docs/zh-Hans/user-guide/features/memory-providers
-
 Hermes Agent 内置了 8 个外部记忆提供商插件，用来提供比内置记忆更强的跨会话记忆能力。外部记忆不会替代内置记忆，而是作为叠加能力并行工作。同一时间只能启用一个外部记忆提供商。
 
 常用命令：

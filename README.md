@@ -1332,7 +1332,57 @@ gateway:
 在任意平台使用 `/whoami` 可以查看当前作用域、自己的权限层级以及可运行的斜杠命令。
 
 ## 12.4 会话管理
+Gateway 会按策略重置会话。自动重置后，下一条消息会提示这是一次自动重置后的新对话。
 
+会话重置策略可通过 `~/.hermes/config.yaml` 的 `session_reset` 配置：
+
+```yaml
+# ~/.hermes/config.yaml
+session_reset:
+  mode: both
+  at_hour: 4
+  idle_minutes: 1440
+  notify: true
+  notify_exclude_platforms:
+    - api_server
+    - webhook
+```
+
+未配置时使用代码内置默认值：
+
+| 配置项                     | 默认值                  | 说明                     |
+| -------------------------- | ----------------------- | ------------------------ |
+| `mode`                     | `both`                  | 自动重置模式             |
+| `at_hour`                  | `4`                     | 每日重置小时时刻         |
+| `idle_minutes`             | `1440`                  | 空闲多少分钟后重置       |
+| `notify`                   | `true`                  | 自动重置后是否通知用户   |
+| `notify_exclude_platforms` | `api_server`, `webhook` | 不发送自动重置通知的平台 |
+
+`mode` 可选值：
+
+| mode    | 说明                             |
+| ------- | -------------------------------- |
+| `none`  | 不自动重置，只依靠上下文压缩管理 |
+| `idle`  | 空闲达到 `idle_minutes` 后重置   |
+| `daily` | 每天在 `at_hour` 指定的小时重置  |
+| `both`  | `idle` 和 `daily` 谁先触发就重置 |
+
+可以在 `~/.hermes/gateway.json` 中按聊天类型或平台覆盖重置策略：
+
+```json
+{
+  "reset_by_type": {
+    "dm": { "mode": "idle", "idle_minutes": 720 },
+    "group": { "mode": "daily", "at_hour": 6 }
+  },
+  "reset_by_platform": {
+    "telegram": { "mode": "idle", "idle_minutes": 480 },
+    "discord": { "mode": "none" }
+  }
+}
+```
+
+覆盖优先级：平台覆盖 > 聊天类型覆盖 > 默认策略。
 
 # 13. Profile
 通过 Profile 能够创建并运行多个独立的 Agent，每个 Agent 有独立的配置、会话、记忆、技能、定时任务，状态数据库和 Gateway。

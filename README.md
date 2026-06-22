@@ -1751,30 +1751,22 @@ delegate_task(
 `role` 默认 `leaf`；`orchestrator` 保留 `delegation` 工具集，但仍受 `max_spawn_depth` 限制。
 
 # 16. Kanban
-- https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban
-- https://github.com/NousResearch/hermes-agent/blob/main/docs/hermes-kanban-v1-spec.pdf
-
-Hermes Kanban 是一个多 Agent 协作层：它是一个可恢复、可审计、可中途介入的工作队列。它把任务、依赖、评论、运行记录和工作目录放进一个持久任务板里，让多个具名 profile 以异步方式协作。
+Hermes Kanban 提供了一个可恢复、可审计、可中途介入的工作队列，其中包含任务、依赖、评论、运行记录和工作目录，能够让多个 Agent 以异步方式协作。
 
 ## 16.1 Kanban 的目标
 ### 16.1.1 从 `delegate_task` 到 Kanban
-Hermes 已经有多 Agent 能力 `delegate_task`：父 Agent 构造一个 `goal` 和可选 `context`，同步启动一个短生命周期、隔离会话里的子 Agent，然后阻塞等待子 Agent 返回摘要。这是一种“分叉并汇合”（fork-and-join）调用，适合短的、自包含的推理子任务。子 Agent 完成后，它的详细过程不会作为一个可继续协作的对象留在系统里；父 Agent 只拿到结构化摘要，并把这个摘要放回当前上下文继续推理。
+Kanban 覆盖了 `delegate_task` 无法覆盖的工作场景：
 
-`delegate_task` 无法覆盖如下场景：
+1. **研究分流与综合**：并行研究员 + 分析师 + 写作者，支持人工介入。
+2. **定时循环工作流**：周期性简报，跨运行累计知识，支持失败恢复。
+3. **工程流水线**：分解 → 在并行 worktree 中实现 → 审查 → 迭代 → PR，并保留贡献和交接记录。
 
-1. **研究分流与综合（Research triage and synthesis）**：多个专家型 Agent 并行产出候选发现，一个或多个审查者选择、合并，人类还可能中途纠正方向。
-2. **定时循环工作流（Scheduled recurring workflows）**：日报、周报、小时级收件箱分流等任务会跨运行积累知识，并且要能从单次失败中恢复。
-3. **数字分身 / 持久助手角色（Digital-twin / persistent assistant roles）**：具名、长期存在的 Agent 身份会在数周或数月里积累对人、偏好和上下文的记忆。
-4. **端到端工程流水线（End-to-end engineering pipelines）**：拆解、并行实现、审查、迭代、提交，整个流程可能持续数小时，并需要保留每个贡献者的身份和交接记录。
-
-这些场景都需要如下能力：
+这些场景需要如下能力：
 
 - 跨运行持久状态
-- 工作进行中的可见性
-- 不同技能 Agent 之间的交接
-- 人类或对等 Agent 随时介入
-
-Kanban 的目标就是补上这些能力。它把协作状态放到一个 Hermes 可控的持久层里，而不是放在某个父 Agent 的上下文窗口或第三方 SDK 的进程内生命周期里。任务、依赖、评论、运行结果和失败恢复都落到任务板上；每个执行者都是具名 profile，拥有自己的 `HERMES_HOME`、记忆、技能和工作目录。
+- 跨 Agent 交接工作
+- 人类或其他 Agent 介入
+- 任务完成后可审计
 
 ### 16.1.2 其他系统的设计方案
 #### 16.1.2.1 Cline Kanban
@@ -1825,6 +1817,38 @@ Hermes Kanban 的设计理念可以概括为几个取舍：
 
 ## 16.2 架构
 ![hermes kanban architecture](images/hermes_kanban_architecture.png)
+
+```text
+CONTROL
++------------------------------+
+| USER                         |
+| CLI / Telegram / Discord ... |
++------------------------------+
+        |
+        | /kanban create | list | comment
+        v
+
+STATE
++------------------+   read/write   +--------------------------+
+| kanban.db        | -------------> | DISPATCHER (cron, 60s)  |
+| SQLite (WAL)     |                | 1. recompute READY      |
++------------------+                | 2. atomic claim (CAS)   |
+        ^                           | 3. spawn worker         |
+        |                           +--------------------------+
+        | complete                        . . .|. . . .
+        |                               .      |      .
+        |                            spawn   spawn    . poll / spawn
+        |                             .        v       v
+
+EXECUTION
++-------------+   +------------+   +---------------+   +-------------+
+| planner     |   | researcher |   | inbox-triage  |   | backend-eng |
+| own home    |   | scratch    |   | dir: ~/Mail   |   | worktree    |
++-------------+   +------------+   +---------------+   +-------------+
+        ^             ^              ^
+        |             |              |
+        +-------------+--------------+
+```
 
 三层架构：
 

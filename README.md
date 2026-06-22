@@ -1751,14 +1751,13 @@ delegate_task(
 `role` 默认 `leaf`；`orchestrator` 保留 `delegation` 工具集，但仍受 `max_spawn_depth` 限制。
 
 # 16. Kanban
-Hermes Kanban 提供了一个可恢复、可审计、可中途介入的工作队列，其中包含任务、依赖、评论、运行记录和工作目录，能够让多个 Agent 以异步方式协作。
+Hermes Kanban 提供了一个可恢复、可审计、可中途介入的工作队列，让多个 Agent 协作。
 
 ## 16.1 Kanban 的目标
-### 16.1.1 从 `delegate_task` 到 Kanban
-Kanban 覆盖了 `delegate_task` 无法覆盖的工作场景：
+`delegate_task` 存在无法覆盖的工作场景：
 
-1. **研究分流与综合**：并行研究员 + 分析师 + 写作者，支持人工介入。
-2. **定时循环工作流**：周期性简报，跨运行累计知识，支持失败恢复。
+1. **研究分流与综合**：并行"研究员 -> 分析师 -> 写作者"，支持人工介入。
+2. **定时循环工作流**：周期性简报，跨运行累积知识，支持失败恢复。
 3. **工程流水线**：分解 → 在并行 worktree 中实现 → 审查 → 迭代 → PR，并保留贡献和交接记录。
 
 这些场景需要如下能力：
@@ -1766,33 +1765,14 @@ Kanban 覆盖了 `delegate_task` 无法覆盖的工作场景：
 - 跨运行持久状态
 - 跨 Agent 交接工作
 - 人类或其他 Agent 介入
-- 任务完成后可审计
-
-### 16.1.2 核心形态
-Hermes Kanban 是所有 Hermes profile 共享的持久化任务看板。默认 board 的数据存储在 `~/.hermes/kanban.db`；任务、依赖、评论、认领、心跳和执行记录都写入 SQLite。每个 worker 都是一个具名 profile 启动的完整 OS 进程，拥有自己的配置、记忆和工作目录。
-
-Kanban 有两类操作入口：
-
-- 用户、脚本和 cron 通过 `hermes kanban ...`、`/kanban ...` 或 Dashboard 创建、查看和管理任务
-- Agent 通过 `kanban_*` 工具读取任务、追加评论、发送心跳、创建子任务、阻塞任务或完成任务
-
-调度器定期扫描 board，推进依赖已满足的任务，原子认领可运行任务，并启动对应 profile worker。所有交接都通过 board 完成，profile 之间不依赖进程内通信。
-
-Kanban 的核心对象包括：
-
-- `Board`：独立任务队列，拥有自己的 SQLite DB、工作区目录和调度循环
-- `Task`：任务记录，包含标题、正文、受让 profile、状态、租户和幂等键等信息
-- `Link`：任务依赖关系，父任务完成后子任务可进入 ready 状态
-- `Comment`：人类和 Agent 之间的持久交接记录
-- `Workspace`：worker 执行任务的目录，可为 scratch、固定目录或 git worktree
-- `Dispatcher`：负责回收过期认领、推进 ready 任务、原子认领和启动 worker
+- 任务可审计
 
 ## 16.2 架构
 三层架构：
 
-- 控制层：用户交互入口，包括 CLI、Gateway 和 Dashboard
-- 状态层：任务板和调度器
-- 执行层：多个相互独立的 Agent 进程
+- 控制层：用户通过 CLI、Gateway 和 Dashboard 与 Kanban 交互，包括创建任务、查看进展、补充人工反馈
+- 状态层：共享 SQLite 看板，保存任务、依赖、评论、认领、心跳和执行记录；dispatcher 推进 ready、原子认领并启动 worker
+- 执行层：多个相互独立的 Agent 进程，worker 之间不直接通信，所有输入、输出、状态变化和交接都写回看板
 
 ```text
 CONTROL
@@ -1828,21 +1808,6 @@ EXECUTION
 | +-------------------+  +---------------------+  |
 +-------------------------------------------------+
 ```
-
-### 16.2.1 Control Plane：CLI / Gateway / Dashboard
-控制层是用户与 Kanban 交互的入口。用户通过 CLI、Gateway 或 Dashboard 把工作交给 Kanban，查看当前进展，补充人工反馈，并根据执行结果决定下一步。
-
-控制层关心的是“我要做什么”“现在做到哪里”“是否需要人工介入”，不直接持有 worker 的执行上下文。
-
-### 16.2.2 State Plane：SQLite board + dispatcher
-状态层是 Kanban 的唯一事实来源。默认 board 使用 `~/.hermes/kanban.db` 共享 SQLite 数据库，所有 profile 进程都读取和写入它。
-
-dispatcher 根据 board 里的任务状态和依赖关系，决定哪些任务可以运行，并启动对应的 profile worker。
-
-### 16.2.3 Execution Plane：独立 profile worker
-执行层由一组独立 profile 进程组成。每个 worker 都是完整的 Hermes 进程，拥有自己的 `HERMES_HOME`、记忆、技能和工作目录。
-
-worker 之间不直接通信，所有输入、输出、状态变化和交接都写回 board。
 
 ## 16.3 Kanban 核心概念
 ### 16.3.1 Board：任务板

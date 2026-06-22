@@ -1000,34 +1000,24 @@ hermes plugins disable <name>     # 禁用插件
 ```
 
 # 10. 持久记忆
-https://hermes-agent.nousresearch.com/docs/user-guide/features/memory
+https://hermes-agent.nousresearch.com/docs/zh-Hans/user-guide/features/memory
 
-Hermes 有一套有容量上限、由 Agent 自己维护的持久记忆系统。它会跨会话保存用户偏好、项目环境、工具习惯和经验教训，并在新会话开始时注入系统提示词。
+Hermes Agent 的持久记忆有明确容量上限，由 Agent 自行维护。它会跨会话保存用户偏好、项目环境和经验教训。
 
-## 10.1 工作原理
-内置记忆由两个文件组成，默认存储在 `~/.hermes/memories/`：
+## 10.1 内置记忆
+内置记忆由两个文件组成，存储在 `~/.hermes/memories/`：
 
-| 文件        | 用途                                                     | 字符上限                    |
-| ----------- | -------------------------------------------------------- | --------------------------- |
-| `MEMORY.md` | Agent 的个人笔记：环境事实、项目约定、工具细节、经验教训 | 2,200 字符（约 800 tokens） |
-| `USER.md`   | 用户画像：用户信息、沟通风格、期望和习惯                 | 1,375 字符（约 500 tokens） |
+| 文件        | 用途                                           | 字符上限                    |
+| ----------- | ---------------------------------------------- | --------------------------- |
+| `MEMORY.md` | Agent 的个人笔记：环境事实、项目约定、经验教训 | 2,200 字符（约 800 tokens） |
+| `USER.md`   | 用户档案：用户偏好、沟通风格、期望和习惯       | 1,375 字符（约 500 tokens） |
 
 - 这两个文件会在会话开始时注入系统提示词
-- 会话中通过 `memory` 工具新增、替换或删除的记忆会立即写入磁盘，但不会立刻改变当前会话已经注入的提示词快照
-- 新的记忆会在下一个会话生效。这样可以保持 LLM prefix cache 稳定
+- Agent 在会话中通过 `memory` 工具新增、替换或删除的记忆会立即写入磁盘，但不会在当前会话立刻生效
+- 新的记忆会在下一个会话生效，以保持 LLM prefix cache 稳定
+- 当记忆已满时，Agent 会整合或替换条目以腾出空间存放新信息
 
-记忆相关配置示例：
-
-```yaml
-# ~/.hermes/config.yaml
-memory:
-  memory_enabled: true        # 启用持久记忆
-  user_profile_enabled: true  # 启用用户档案
-  memory_char_limit: 2200     # 记忆字符上限（约 800 tokens）
-  user_char_limit: 1375       # 用户档案字符上限（约 500 tokens）
-```
-
-系统提示词中的记忆大致长这样：
+系统提示词中的记忆的呈现方式：
 
 ```text
 ══════════════════════════════════════════════
@@ -1040,104 +1030,116 @@ This machine runs Ubuntu 22.04, has Docker and Podman installed
 User prefers concise responses, dislikes verbose explanations
 ```
 
-`§`（节号符号，section sign）用来分隔不同记忆条目，标题会显示当前容量占用，提醒 Agent 在接近上限时做合并或替换。
+标题会显示当前容量占用，提醒 Agent 在接近上限时做合并或替换；`§` (节号符号，section sign)用来分隔不同记忆条目。
 
-## 10.2 memory 工具
+记忆相关配置：
+
+```yaml
+# ~/.hermes/config.yaml
+memory:
+  memory_enabled: true        # 启用持久记忆
+  user_profile_enabled: true  # 启用用户档案
+  memory_char_limit: 2200     # 记忆字符上限
+  user_char_limit: 1375       # 用户档案字符上限
+```
+
+## 10.2 Memory 工具操作
 Agent 通过 `memory` 工具管理记忆，常用动作：
 
-| 动作      | 用途                                           |
-| --------- | ---------------------------------------------- |
-| `add`     | 添加新的记忆条目                               |
-| `replace` | 替换已有条目，使用 `old_text` 做短唯一子串匹配 |
-| `remove`  | 删除已有条目，使用 `old_text` 做短唯一子串匹配 |
+| 动作      | 用途                       |
+| --------- | -------------------------- |
+| `add`     | 添加新的记忆条目           |
+| `replace` | 替换已有条目，使用子串匹配 |
+| `remove`  | 删除已有条目，使用子串匹配 |
 
-没有 `read` 动作。记忆内容会自动注入系统提示词，Agent 在会话里本来就能看到当前快照。
+没有 `read` 动作。记忆内容会自动注入系统提示词，Agent 在会话能直接看到。
 
-`replace` 和 `remove` 不需要传完整条目，只要传能唯一定位的短文本：
-
-```text
-memory(action="replace", target="memory",
-       old_text="dark mode",
-       content="User prefers light mode in VS Code, dark mode in terminal")
-```
-
-使用 `old_text` 匹配时，会先去掉 `old_text` 首尾空白，并在每条记忆中进行精确子串匹配。必须刚好匹配 1 条记忆；匹配 0 条会报错，匹配多条也会报错并要求提供更具体的片段
-
-## 10.3 记忆管理
-记忆管理指令：
-
-**提示词：`MEMORY_GUIDANCE`**
-
-- **位置**：`agent/prompt_builder.py`
-- **作用**：指导 Agent 何时写入 memory、何时不要写入 memory、何时改用 Skill
-- **注入位置**：`memory` 工具可用时，随主对话系统提示词注入
-
-中文大意：用 `memory` 保存跨会话仍然重要的长期事实，例如用户偏好、环境细节、工具使用注意事项和稳定约定。优先保存能减少用户未来重复纠正或提醒的内容。不要保存任务进度、会话结果、完成记录、临时 TODO、PR / issue / commit 编号，或任何一周内会过期的内容；这类历史细节应该用 `session_search` 找回。如果沉淀的是一种可复用做法或流程，应该保存成 Skill。记忆要写成陈述性事实，不要写成命令式指令。
-
-关键原文片段：
+`replace` 和 `remove` 不需要传完整条目，只需要传能唯一定位的短文本：
 
 ```text
-You have persistent memory across sessions. Save durable facts using the memory
-tool: user preferences, environment details, tool quirks, and stable conventions.
-Memory is injected into every turn, so keep it compact and focused on facts that
-will still matter later.
-
-Prioritize what reduces future user steering — the most valuable memory is one
-that prevents the user from having to correct or remind you again.
-
-Do NOT save task progress, session outcomes, completed-work logs, or temporary TODO
-state to memory; use session_search to recall those from past transcripts.
-
-If you've discovered a new way to do something, solved a problem that could be
-necessary later, save it as a skill with the skill tool.
-
-Write memories as declarative facts, not instructions to yourself.
-'User prefers concise responses' ✓ — 'Always respond concisely' ✗.
+memory(
+    action="replace",
+    target="memory",
+    old_text="dark mode",
+    content="User prefers light mode in VS Code, dark mode in terminal",
+)
 ```
 
-记忆中适合保存：
+必须刚好匹配 1 条记忆；匹配 0 条会报错，匹配多条也会报错并要求提供更具体的片段。
+
+## 10.3 记忆管理规则
+`memory` 工具有两个写入目标：
+
+| 目标     | 用途                                           |
+| -------- | ---------------------------------------------- |
+| `memory` | Agent 的个人笔记：环境事实、项目约定、经验教训 |
+| `user`   | 用户档案：用户偏好、沟通风格、期望和习惯       |
+
+`memory` 适合保存：
+
+- 环境事实，例如操作系统、工具安装情况、项目结构
+- 项目约定和配置
+- 工具使用注意事项和变通方法
+- 已完成任务的日记条目
+- 有效的技能和技术
+
+`user` 适合保存：
+
+- 姓名、角色、时区
+- 沟通偏好，例如简洁或详细
+- 用户反感的事项和需要避免的内容
+- 工作流习惯
+- 技术水平
+
+应该主动保存到记忆中的内容：
 
 - 用户偏好：例如「用户偏好 TypeScript 而不是 JavaScript」
 - 环境事实：例如「这台服务器运行 Debian 12 和 PostgreSQL 16」
 - 用户纠正：例如「Docker 命令不要用 sudo，用户已在 docker 组」
 - 项目约定：例如「项目使用 tabs、120 字符行宽、Google 风格 docstring」
+- 已完成的工作：例如「2026-01-15 将数据库从 MySQL 迁移到 PostgreSQL」
 - 显式要求：例如「记住 API key 每月轮换」
 
-记忆中不适合保存：
+不适合保存到记忆中的内容：
 
 - 太模糊的信息：例如「用户问过 Python」
 - 容易重新查询的通用知识
 - 大段代码、日志、数据表
-- 临时任务状态、一次性文件路径、短期 TODO
-- 已经写在 `SOUL.md`、`AGENTS.md` 等上下文文件里的内容
+- 会话特定的临时内容，例如一次性文件路径或临时调试上下文
+- 已经写在 `SOUL.md`、`AGENTS.md` 等上下文文件中的信息
 
-容量管理：记忆有严格字符上限，避免系统提示词无限膨胀。当新增内容会超过上限时，`memory` 工具会返回错误，并附带当前条目和容量信息。此时 Agent 应该先合并、替换或删除旧条目，再添加新内容。
+记忆有严格字符上限：
 
-预防重复数据：记忆系统会拒绝完全重复的条目。如果添加的内容已经存在，会返回成功但提示没有新增重复内容。
+| 存储     | 上限       | 典型条目数 |
+| -------- | ---------- | ---------- |
+| `memory` | 2,200 字符 | 8-15 条    |
+| `user`   | 1,375 字符 | 5-10 条    |
 
-安全扫描：记忆条目在写入前还会做安全扫描，包含提示词注入、凭证外泄、SSH 后门、不可见 Unicode 字符等风险模式的内容会被阻止。
+当新增条目会超过上限时，`memory` 工具会返回错误，并附带当前条目和容量信息。Agent 应先删除或整合旧条目，使用 `replace` 合并相关记忆，再添加新条目。
 
-## 10.4 session_search vs memory
+当记忆使用率超过 80% 时，应先整合现有条目再添加新内容。高质量记忆条目应紧凑、具体、信息密度高。
+
+记忆系统会拒绝完全重复的条目。如果添加的内容已经存在，会返回成功，并提示未添加重复项。
+
+记忆条目写入前会经过安全扫描。包含提示词注入、凭证外泄、SSH 后门或不可见 Unicode 字符等风险模式的内容会被阻止。
+
+## 10.4 会话搜索与记忆对比
 除了 `MEMORY.md` 和 `USER.md`，Hermes 还可以通过 `session_search` 搜索过去的完整会话。两者用途不同：
 
-| 对比项     | 持久记忆                     | Session Search             |
-| ---------- | ---------------------------- | -------------------------- |
-| 容量       | 约 1,300 tokens，总量很小    | 理论上包含所有历史会话     |
-| 速度       | 会话开始时直接进入系统提示词 | 需要按需查询数据库         |
-| 用途       | 必须一直可见的关键事实       | 查找过去某次讨论的具体内容 |
-| 管理方式   | Agent 主动维护、压缩、替换   | 自动保存所有会话           |
-| token 成本 | 每个会话固定占用少量上下文   | 返回的消息片段占用上下文   |
+| 对比项     | 持久记忆                           | 会话搜索                       |
+| ---------- | ---------------------------------- | ------------------------------ |
+| 容量       | 约 1,300 tokens                    | 所有历史会话                   |
+| 速度       | 即时，会话开始时直接注入系统提示词 | FTS5 查询约 20 ms，滚动约 1 ms |
+| 用途       | 始终可见的关键事实                 | 查找过去某次讨论的具体内容     |
+| 管理方式   | Agent 主动维护                     | 自动保存所有会话               |
+| Token 成本 | 每个会话固定占用少量上下文         | 返回的消息片段占用上下文       |
 
-memory 保存「以后经常要用的稳定事实」；session_search 用来回答「上次我们讨论过什么」。
+## 10.5 外部记忆提供商
+https://hermes-agent.nousresearch.com/docs/zh-Hans/user-guide/features/memory-providers
 
-## 10.5 外部记忆
-https://hermes-agent.nousresearch.com/docs/user-guide/features/memory-providers
+Hermes Agent 内置了 8 个外部记忆提供商插件，用来提供比内置记忆更强的跨会话记忆能力。外部记忆不会替代内置记忆，而是作为叠加能力并行工作。同一时间只能启用一个外部记忆提供商。
 
-Hermes 还内置了 8 个外部记忆提供商插件，用来提供比 `MEMORY.md` / `USER.md` 更强的跨会话记忆能力，例如语义搜索、知识图谱、自动事实抽取、用户建模等。
-
-外部记忆不会替代内置记忆，而是作为叠加能力并行工作。同一时间只能启用一个外部记忆提供商；内置记忆始终可以继续使用。
-
-相关命令：
+常用命令：
 
 ```bash
 hermes memory setup   # 交互式选择并配置外部记忆提供商
@@ -1153,25 +1155,27 @@ memory:
   provider: openviking
 ```
 
-可选 provider 包括：
+外部记忆 provider 激活后，Hermes 会自动：
 
-| 分档 | Provider      | 重点功能 / 优势                                            |
-| ---- | ------------- | ---------------------------------------------------------- |
-| 入门 | `honcho`      | 跨会话用户建模、session 级上下文、基于历史上下文的综合判断 |
-| 入门 | `mem0`        | 服务端 LLM 事实抽取、语义搜索、重排和自动去重              |
-| 进阶 | `openviking`  | 文件系统式知识层级、分层读取、自动抽取 6 类记忆            |
-| 进阶 | `byterover`   | CLI 驱动的层级知识树、分层检索、压缩前自动提取洞察         |
-| 复杂 | `hindsight`   | 知识图谱、实体关系、多策略检索、跨记忆综合                 |
-| 复杂 | `holographic` | FTS5 全文搜索、信任评分、HRR 组合查询、冲突检测            |
-| 复杂 | `retaindb`    | Vector + BM25 + Reranking 混合搜索、7 类记忆、增量压缩     |
-| 复杂 | `supermemory` | 语义长期记忆、用户画像、会话图谱摄取、上下文防污染         |
+- 将 provider 已知上下文注入系统提示词
+- 在每轮对话前后台预取相关记忆
+- 在每次响应后将对话轮次同步到 provider
+- 在会话结束时提取记忆，取决于 provider 是否支持
+- 将内置记忆写入镜像到外部 provider
+- 添加 provider 专属工具，让 Agent 搜索、存储和管理外部记忆
 
-选择建议：
+可用 provider 包括：
 
-- 只是想让记忆更智能，先从 `honcho` 或 `mem0` 开始
-- 更偏本地 / 文件系统式知识管理，可以看 `openviking` 或 `byterover`
-- 需要知识图谱、实体关系和复杂关联检索，再考虑 `hindsight`
-- 需要混合检索、评分、冲突检测等进阶能力，再看 `holographic`、`retaindb` 或 `supermemory`
+| Provider      | 功能                                                    | 场景                                      | 数据存储                          | 费用                            |
+| ------------- | ------------------------------------------------------- | ----------------------------------------- | --------------------------------- | ------------------------------- |
+| `honcho`      | 跨会话用户建模、辩证推理、会话上下文、语义搜索          | 多 Agent 系统、用户-Agent 对齐            | Honcho Cloud 或自托管             | Honcho 定价或自托管免费         |
+| `mem0`        | 服务端 LLM 事实提取、语义搜索、重排序、自动去重         | 免维护记忆管理                            | Mem0 Cloud                        | Mem0 定价                       |
+| `openviking`  | 文件系统式知识层级、分层检索、6 类记忆提取              | 可结构化浏览的自托管知识管理              | 自托管，本地或云端                | 免费，AGPL-3.0                  |
+| `byterover`   | CLI 持久记忆、分层知识树、分层检索、预压缩提取          | 本地优先、可移植、面向开发者的记忆管理    | 本地或 ByteRover Cloud            | 本地免费，云端按 ByteRover 定价 |
+| `hindsight`   | 知识图谱、实体解析、多策略检索、跨记忆合成              | 基于知识图谱的实体关系召回                | Hindsight Cloud 或本地 PostgreSQL | 云端按 Hindsight 定价，本地免费 |
+| `holographic` | 本地 SQLite 事实存储、FTS5 搜索、信任评分、HRR 代数查询 | 无外部依赖的纯本地高级检索记忆            | 本地 SQLite                       | 免费                            |
+| `retaindb`    | 混合搜索、7 种记忆类型、增量压缩                        | 已使用 RetainDB 基础设施的团队            | RetainDB Cloud                    | $20/月                          |
+| `supermemory` | 语义长期记忆、profile 召回、会话图谱导入、多容器        | 带用户 profile 和会话级图谱构建的语义召回 | Supermemory Cloud                 | Supermemory 定价                |
 
 # 11. 上下文文件
 https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files

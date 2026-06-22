@@ -1291,7 +1291,7 @@ GATEWAY_ALLOWED_USERS=123456789,987654321
 GATEWAY_ALLOW_ALL_USERS=true
 ```
 
-私信配对：无需手动配置用户 ID，未知用户在私信机器人时会收到一次性配对码 (1 小时后过期)，例如：`Pairing code: XKGH5N7P`。之后管理员在本机批准：
+私信配对：无需手动配置用户 ID，未知用户在私信机器人时会收到一次性配对码 (1 小时后过期)，例如 `Pairing code: XKGH5N7P`。之后管理员在本机批准：
 
 ```bash
 hermes pairing approve telegram XKGH5N7P  # 批准配对
@@ -1299,17 +1299,11 @@ hermes pairing list                       # 查看配对列表
 hermes pairing revoke telegram <user_id>  # 撤销配对
 ```
 
-### 12.3 斜杠命令权限控制
-用户通过允许列表或配对后，可以分成管理员和普通用户。这个权限分层目前只控制斜杠命令，不影响普通聊天；普通用户仍然可以和 Agent 对话。
+## 12.3 斜杠命令权限控制
+管理员与普通用户的划分决定已允许用户能运行哪些斜杠命令：
 
-权限规则：
-
-1. 先判断用户是否被允许使用 Gateway：来自允许列表、平台允许列表、群组允许列表或配对记录。
-2. 再判断当前作用域是否启用了命令权限分层。私聊作用域看 `allow_admin_from`，群组 / 频道作用域看 `group_allow_admin_from`。
-3. 如果当前作用域没有配置对应的 admin 列表，保持向后兼容：该作用域不区分管理员和普通用户，所有已允许用户都可以运行斜杠命令。
-4. 如果当前作用域配置了 admin 列表，列表内用户是管理员，可以运行所有内置和插件注册的斜杠命令。
-5. 不在 admin 列表里的已允许用户是普通用户，只能运行显式允许的命令，以及始终允许的 `/help` 和 `/whoami`。
-6. 私聊和群组 / 频道是两个独立作用域；只配置 `group_allow_admin_from` 不会影响私聊，私聊仍按自己的配置判断。
+- **管理员**：可运行所有已注册的斜杠命令，包括内置命令和插件注册的命令
+- **普通用户**：可正常与 Agent 对话，但只能运行显式允许的斜杠命令，以及 `/help` 和 `/whoami`
 
 示例配置：
 
@@ -1319,14 +1313,16 @@ gateway:
   platforms:
     discord:
       extra:
-        allow_from: ["111", "222", "333"]       # 允许私聊使用的用户
-        allow_admin_from: ["111"]               # 私聊管理员：可运行所有斜杠命令
-        user_allowed_commands: [status, model]  # 私聊普通用户可运行的命令
-        group_allow_admin_from: ["111"]         # 群组 / 频道管理员
-        group_user_allowed_commands: [status]   # 群组 / 频道普通用户可运行的命令
+        allow_from: ["111", "222", "333"]
+        allow_admin_from: ["111"]                 # 管理员：所有斜杠命令
+        user_allowed_commands: [status, model]    # 普通用户可运行的命令
+        group_allow_admin_from: ["111"]           # 群组 / 频道管理员
+        group_user_allowed_commands: [status]     # 群组 / 频道普通用户可运行的命令
 ```
 
-可以用 `/whoami` 查看当前平台、作用域、自己的权限层级，以及当前可运行的斜杠命令。
+如果某个作用域没有配置 `allow_admin_from`，该作用域不启用权限层级，所有已允许用户都拥有完整斜杠命令权限。
+
+在任意平台使用 `/whoami` 可以查看当前作用域、自己的权限层级以及可运行的斜杠命令。
 
 # 13. Profile
 https://hermes-agent.nousresearch.com/docs/user-guide/profiles

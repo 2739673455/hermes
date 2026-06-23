@@ -1812,6 +1812,7 @@ EXECUTION
 ## 16.3 Kanban 核心概念
 ### 16.3.1 Board
 Board 是一个独立的任务队列，拥有自己的：
+
 - SQLite 数据库 (`~/.hermes/kanban/boards/<slug>/kanban.db`)
 - workspaces 目录
 - logs 目录
@@ -1820,7 +1821,7 @@ Board 是一个独立的任务队列，拥有自己的：
 可以有多个 board。调度器启动 worker 时会固定 `HERMES_KANBAN_BOARD`，让 worker 只看到自己所属的 board。默认 board 的数据库位于 `~/.hermes/kanban.db`。
 
 ### 16.3.2 Task
-Task 是 Kanban 的基本工作单元，一个 Task 对应数据库中 `tasks` 表的一行记录，通常包含标题、正文、一个指派人、状态、workspace、租户等。
+Task 是 Kanban 的基本工作单元，一个 Task 对应 `tasks` 表的一行记录，通常包含标题、正文、一个指派人、状态、workspace、租户等。
 
 task 的状态包括：
 
@@ -1843,121 +1844,99 @@ Link 是 task 之间的父子依赖，对应 `task_links` 表中的一行 (`pare
 Comment 是人类或 Agent 在 task 上追加的持久消息，也是 Kanban 的跨 Agent 交接协议，对应 `task_comments` 表。worker 被启动或重新启动时，会读取完整评论串。人类可以通过评论补充要求、回答 worker 的问题、纠正方向；Agent 也可以通过评论留下中间发现、交接说明。
 
 ### 16.3.5 Event
-Event 是 Kanban 的任务审计日志，对应 `task_events` 表。它记录 task 生命周期里的状态变化、人工编辑和 worker 执行遥测，例如创建、指派、依赖满足后从 `todo` 推进到 `ready`（`promoted`）、dispatcher 认领、worker 启动、心跳、完成、阻塞、崩溃、超时、恢复，以及熔断器放弃重试（`gave_up`）。
+Event 是 Kanban 的任务审计日志，对应 `task_events` 表。它记录 task 的状态变化、人工编辑和 worker 执行遥测：
 
-`task_runs` 是每次 worker 执行尝试的记录表，用来保存本次运行的 profile、开始 / 结束时间、结果摘要、metadata 和错误信息；`task_events` 可以通过 `run_id` 关联到某一次执行尝试，并把这些变化串成按时间排序的审计轨迹。
+- **任务生命周期**：
+  - `created`（创建）
+  - `promoted`（依赖满足后推进到 `ready`）
+  - `claimed`（被调度器认领）
+  - `completed`（完成）
+  - `blocked`（阻塞）
+  - `unblocked`（解除阻塞）
+  - `archived`（归档）
+- **人工编辑**：
+  - `assigned`（改派指派人）
+  - `edited`（编辑标题或正文）
+  - `reprioritized`（调整优先级）
+  - `status`（直接改状态）
+- **worker 遥测**：
+  - `spawned`（worker 已启动）
+  - `heartbeat`（worker 心跳）
+  - `reclaimed`（认领过期后回收）
+  - `crashed`（worker 崩溃）
+  - `timed_out`（运行超时）
+  - `stale`（长时间无心跳后判定陈旧）
+  - `respawn_guarded`（重启被保护策略拦截）
+  - `spawn_failed`（worker 启动失败）
+  - `protocol_violation`（协议违例）
+  - `gave_up`（熔断器放弃重试）
 
-`task_events` 表结构：
+### 16.3.6 Workspace
+Task 绑定的 workspace 会作为其 worker 执行时所在的目录。Kanban 支持如下 workspace 类型：
 
-```sql
-CREATE TABLE IF NOT EXISTS task_events (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT, -- 事件 ID，单调递增
-    task_id    TEXT NOT NULL,                    -- 所属任务 ID
-    run_id     INTEGER,                          -- 所属 task_runs 记录，可为空
-    kind       TEXT NOT NULL,                    -- 事件类型
-    payload    TEXT,                             -- JSON payload
-    created_at INTEGER NOT NULL                  -- 创建时间，Unix 时间戳
-);
-```
-
-常见事件可以分成三类：
-
-- **任务生命周期**：`created`（创建）、`promoted`（依赖满足后推进到 `ready`）、`claimed`（被 dispatcher 认领）、`completed`（完成）、`blocked`（阻塞）、`unblocked`（解除阻塞）、`archived`（归档）
-- **人工或控制面编辑**：`assigned`（改派 assignee）、`edited`（编辑标题或正文）、`reprioritized`（调整优先级）、`status`（直接改状态）
-- **worker / dispatcher 遥测**：`spawned`（worker 已启动）、`heartbeat`（worker 心跳）、`reclaimed`（认领过期后回收）、`crashed`（worker 崩溃）、`timed_out`（运行超时）、`stale`（长时间无心跳后判定陈旧）、`respawn_guarded`（重启被保护策略拦截）、`spawn_failed`（worker 启动失败）、`protocol_violation`（协议违例）、`gave_up`（熔断器放弃重试）
-
-### 16.3.6 Workspace：任务的工作目录
-Workspace 是 task 绑定的工作目录，也是 worker 执行该 task 时所在的文件系统目录。Task 通过 `workspace_kind` 和 `workspace_path` 记录 workspace 设置；board 提供默认的 `workspaces/` 根目录，用来放置 `scratch` 类型任务目录。Kanban 支持如下 workspace 类型：
-
-- `scratch`：默认模式，为 task 创建新的临时工作目录。默认 board 位于 `~/.hermes/kanban/workspaces/<id>/`；非默认 board 位于 `~/.hermes/kanban/boards/<slug>/workspaces/<id>/`
+- `scratch`：默认模式，为 task 创建新的临时工作目录
 - `dir:<path>`：使用已有绝对路径
-- `worktree`：为代码任务创建 git worktree，目录通常位于 `.worktrees/<id>/`。由 worker 侧执行 `git worktree add` 创建，让并行工程任务互不干扰
+- `worktree`：用于代码任务的 git worktree，由 worker 侧执行 `git worktree add` 创建
 
-### 16.3.7 Dispatcher：调度器
-Dispatcher 是一个长期循环，默认运行在 Gateway 内部。它每 N 秒（默认 60 秒）扫描 board，回收异常任务，重新计算 ready 状态，认领可启动任务，并为已分配 assignee 的任务启动对应 profile worker。
+### 16.3.7 Dispatcher
+调度器是一个默认运行在 Gateway 内部的长期循环。它每 N 秒（默认 60 秒）扫描 board，回收异常任务，推进就绪任务，认领可启动任务，并为已分配指派人的任务启动 worker。
 
-这个间隔可通过 `kanban.dispatch_interval_seconds` 调整：
-
-```yaml
-# ~/.hermes/config.yaml
-kanban:
-  dispatch_interval_seconds: 60  # dispatcher tick 间隔，单位秒；默认 60，最小 1
-```
-
-### 16.3.8 Worker：执行者
-Worker 是 dispatcher 启动的独立 Hermes profile 进程。每个 worker 都是完整的操作系统进程，拥有自己的 `HERMES_HOME`、记忆、技能、工具权限和 workspace。
-
-处理 Kanban task 的 profile 需要加载 `kanban-worker` skill。这个 skill 教会 worker Kanban 工具调用完整生命周期，而不是在终端里执行 `hermes kanban ...` 命令：
+### 16.3.8 Worker
+Worker 是调度器启动的独立 Hermes profile 进程。调度器启动 worker 时会自动传入内置 Skill `kanban-worker`，该 Skill 教会 worker Kanban 工具调用完整生命周期。
 
 1. 启动后先调用 `kanban_show()`，读取 task 标题、正文、父任务交接、历史运行记录和完整评论串
-2. 通过 terminal 工具进入 `$HERMES_KANBAN_WORKSPACE`，在 task 绑定的 workspace 中执行工作
-3. 长时间运行时定期调用 `kanban_heartbeat(note="...")`，刷新心跳并留下进度说明
+2. 在 task 绑定的 workspace 中执行工作
+3. 定期调用 `kanban_heartbeat(note="...")`，刷新心跳并留下进度说明
 4. 完成时调用 `kanban_complete(summary="...", metadata={...})`；卡住时调用 `kanban_block(reason="...")`
 
-`kanban-worker` 是 bundled skill，安装和更新时会同步到每个 profile。dispatcher 启动 worker 时也会自动传入 `--skills kanban-worker`，所以即使某个 profile 的默认 skills 配置里没有它，worker 仍会获得这套工作模式。
-
-worker 不通过 CLI 命令操作任务板，而是通过 `kanban_*` 工具读取和更新 task，例如 `kanban_show`、`kanban_heartbeat`、`kanban_complete`、`kanban_block`、`kanban_comment`。这样做是为了保持后端可移植性：worker 的 terminal 工具可能指向远程执行后端，例如 Docker、SSH。如果 worker 在 terminal 里执行 `hermes kanban complete`，命令实际会运行在远程容器或远程主机中，而远程主机可能没有安装 `hermes`，也没有挂载本机的 `~/.hermes/kanban.db`。`kanban_*` 工具则运行在 Agent 自己的 Python 进程里，可以直接访问当前 Hermes home 下正确的 board 数据库，不受 terminal 后端位置影响。
-
 ## 16.4 协作模式
-Kanban 可衍生出如下可重用的协作模式。
+1. 扇出
 
-### 16.4.1 扇出（Fan-out）
-把一个目标拆成多个同级 task，并行交给同一类或多类 profile 执行。task 之间没有父子依赖，各自独立产出结果；如果需要综合，再创建一个下游汇总 task。
+   ```text
+   goal
+   ├── researcher-a
+   ├── researcher-b
+   └── researcher-c
+   ```
 
-例如：
+2. 流水线
 
-```text
-goal
-├── researcher-a
-├── researcher-b
-└── researcher-c
-```
+    ```text
+    researcher -> analyst -> writer -> reviewer
+    ```
 
-### 16.4.2 流水线（Pipeline）
-上游 task 完成后，下游 task 才进入 `ready`，适合“一个阶段的输出是下一个阶段的输入”的工作。依赖关系用 `task_links` 表达，父任务的摘要和评论会成为下游 worker 的上下文。
+3. 扇入
 
-例如：
+   ```text
+   researcher-a \
+   researcher-b  -> reviewer / aggregator
+   researcher-c /
+   ```
 
-```text
-researcher -> analyst -> writer -> reviewer
-```
+4. 长期运行日志
 
-### 16.4.3 扇入（Fan-in）
-多个同级 task 先独立产出候选发现、判断或实现方案；聚合 task 依赖它们全部完成后再启动。适合研究综合、方案评审、并行实现后的汇总。
+   同一个 profile 在同一个 workspace 周期性处理任务，通过持久记忆和共享 workspace 累积经验，并利用 Kanban 充当审计时间线。适合日报、周报、监控巡检、收件箱分流这类工作。
 
-例如：
+5. 人工介入
 
-```text
-researcher-a \
-researcher-b  -> reviewer / aggregator
-researcher-c /
-```
+   Worker 遇到不确定的情况时，把 task 置为 `blocked`，并在任务评论中附上疑问。用户或其他 profile 通过评论回复并 unblock 任务。调度器重新启动 worker，任务评论会成为下一次 worker 的上下文。
 
-### 16.4.4 长期运行日志（Long-running journal）
-同一个 profile 在同一个共享 workspace 通过定时任务反复处理周期性任务。profile 通过持久记忆和共享 workspace 累积经验，并利用 Kanban 充当审计时间线。适合日报、周报、监控巡检、收件箱分流这类工作。
+   ```text
+   worker 执行 -> block(reason) -> 用户评论 -> unblock -> 调度器重新启动 worker
+   ```
 
-### 16.4.5 人工介入分流（Human-in-the-loop triage）
-worker 遇到不确定的情况时，把 task 置为 `blocked`，并在任务评论中附上疑问。用户或其他 profile 通过评论回复并 unblock 任务。调度器会重新启动 worker，任务评论会成为下一次 worker 的上下文。
+6. 批量对象作业
 
-例如：
+   同一个 profile 通过 N 个 task 管理 N 个对象，这里的对象可以是社媒账号、客户、服务器、仓库、监控服务或数据源，每个对象有自己的 workspace。
 
-```text
-worker 执行 -> kanban_block(reason) -> user comment -> unblock -> dispatcher 重新启动 worker
-```
+   例如一个 `insta-manager` profile 管理多个 Instagram 账号：
 
-### 16.4.6 批量对象作业（Fleet farming）
-一个 profile 管理 N 个对象：这里的对象可以是社媒账号、客户、服务器、仓库、监控服务或数据源。所有 task 指派给同一个 profile，但每个对象使用自己的 workspace 目录。
-
-例如一个 `insta-manager` profile 管理 50 个 Instagram 账号：
-
-```text
-task: post daily story for acct-1   -> assignee=insta-manager, workspace=dir:~/insta/acct-1/
-task: post daily story for acct-2   -> assignee=insta-manager, workspace=dir:~/insta/acct-2/
-...
-task: post daily story for acct-50  -> assignee=insta-manager, workspace=dir:~/insta/acct-50/
-```
-
-通过 Cron 按账号定期创建任务，例如每天为每个账号创建一个发布、巡检或分析 task。
+   ```text
+   task: post daily story for acct-1   -> assignee=insta-manager, workspace=dir:~/insta/acct-1/
+   task: post daily story for acct-2   -> assignee=insta-manager, workspace=dir:~/insta/acct-2/
+   ...
+   task: post daily story for acct-50  -> assignee=insta-manager, workspace=dir:~/insta/acct-50/
+   ```
 
 ## 16.5 Dispatcher：调度器
 ### 16.5.1 职责与 tick 流程
@@ -1967,23 +1946,6 @@ dispatcher 负责把 board 中已经满足运行条件的 task 交给对应 prof
 2. **recompute ready**：将没有父任务，或所有父任务都已经 `done` / `archived` 的任务推进到 `ready`。
 3. **atomic claim**：扫描 `ready`、`claim_lock IS NULL`、`assignee IS NOT NULL` 的任务，通过“比较并交换”（compare-and-swap）式 SQL 更新 `tasks` 表记录。只有更新成功才算认领成功；成功后任务变成 `running`，并写入 `claim_lock` 和 `claim_expires`。
 4. **启动 worker**：认领成功后解析 workspace，启动 assignee 对应的 profile worker。worker 启动成功后，dispatcher 把子进程 PID 写入 `worker_pid`，并记录启动事件。
-
-### 16.5.2 并发正确性
-任务认领通过 SQLite 写事务和“比较并交换”式更新完成。并发 tick、重复触发或恢复过程同时看到同一个 `ready` task 时，只有一个认领者能成功把它推进到 `running`。
-
-核心语义类似：
-
-```sql
-UPDATE tasks
-   SET status = 'running',
-       claim_lock = ?,
-       claim_expires = ?
- WHERE id = ?
-   AND status = 'ready'
-   AND claim_lock IS NULL;
-```
-
-如果更新命中 1 行，说明当前调度器成功认领任务，可以继续启动 worker。如果更新命中 0 行，说明任务状态已经变化或已经被认领，当前 tick 不会启动 worker。
 
 ### 16.5.3 失败与恢复
 worker 启动失败、运行超时、进程崩溃，或没有按协议把 task 标记为完成 / 阻塞，都会被记录到任务事件和运行记录中。dispatcher 后续 tick 会尝试恢复这类任务，让它重新进入可调度状态。

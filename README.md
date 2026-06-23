@@ -2010,172 +2010,19 @@ hermes config set kanban.orchestrator_profile orchestrator
 hermes config set kanban.auto_decompose true
 ```
 
-## 16.6 命令工具
-基本形式：
+## 16.6 常用命令
+https://hermes-agent.nousresearch.com/docs/reference/cli-commands#hermes-kanban
+
+Kanban 启动准备：
 
 ```bash
-hermes kanban [--board <slug>] <action> [options]
+hermes kanban init                     # 创建 kanban.db，已存在时不会破坏数据
+hermes gateway install                 # 安装 Gateway 为服务
+hermes gateway start                   # 启动 Gateway
+hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 ```
 
-Hermes 会按 `--board <slug>` -> `HERMES_KANBAN_BOARD` -> `~/.hermes/kanban/current` -> `default` 的优先级决定要操作的 board。
-
-### 16.6.1 快速启动
-```bash
-hermes kanban init      # 创建 kanban.db，已存在时不会破坏数据
-hermes gateway install  # 安装 Gateway 为服务
-hermes gateway start    # 启动 Gateway
-hermes kanban create "research Hermes Agent" --assignee researcher  # 创建任务
-hermes kanban watch     # 实时观察事件
-hermes kanban list      # 查看任务列表
-hermes kanban stats     # 查看任务统计
-```
-
-### 16.6.2 Board 管理
-多 board 用于把不同项目、仓库或业务域隔离到不同 SQLite DB、workspace 和日志目录中。
-
-```bash
-hermes kanban boards list [--all] [--json]  # 列出 board；--all 包含已归档 board，--json 输出机器可读结果
-# 创建 board
-hermes kanban boards create <slug> \
-  [--name "Display Name"] \
-  [--description "..."] \
-  [--icon "..."] \
-  [--color "..."] \
-  [--switch]
-hermes kanban boards switch <slug>  # 切换当前默认 board
-hermes kanban boards show           # 查看当前 board
-hermes kanban boards rename <slug> "New Display Name"  # 修改显示名；slug 是目录名，不会被改
-hermes kanban boards rm <slug>          # 归档 board；默认移动到 boards/_archived/<slug>-<ts>/
-hermes kanban boards rm <slug> --delete # 硬删除 board；不可恢复
-hermes kanban --board <slug> list       # 临时查看某个 board，不改变当前默认 board
-hermes kanban --board <slug> create "Restart service" --assignee ops  # 临时在某个 board 创建任务
-```
-
-### 16.6.3 创建、查询和指派
-```bash
-# 创建 task
-hermes kanban create "<title>" \
-  [--body "..."] \
-  [--assignee <profile>] \
-  [--parent <id>]... \
-  [--tenant <name>] \
-  [--workspace scratch|worktree|worktree:<path>|dir:<absolute-path>] \
-  [--branch <name>] \
-  [--priority N] \
-  [--triage] \
-  [--idempotency-key KEY] \
-  [--max-runtime 30m|2h|1d|<seconds>] \
-  [--max-retries N] \
-  [--skill <name>]... \
-  [--json]
-hermes kanban list [--mine] [--assignee P] [--status S] [--tenant T] [--archived] [--json]  # 列表
-hermes kanban show <id> [--json]       # 查看单个 task；包含评论、事件、依赖和运行信息
-hermes kanban assign <id> <profile>    # 指派 / 改派
-hermes kanban assign <id> none         # 取消 assignee
-hermes kanban assignees [--json]       # 查看可用 assignee：磁盘上的 profile + 每个 assignee 的 task 数
-```
-
-常用创建参数：
-
-- `--assignee <profile>`：指定执行 task 的 Hermes profile。
-- `--parent <id>`：建立父依赖；可以多次传入，用于指定多个父任务。父任务未完成前，子任务留在 `todo`。
-- `--tenant <name>`：给 task 打租户 / 业务域标签。
-- `--workspace scratch`：默认临时目录。
-- `--workspace dir:<absolute-path>`：绑定已有共享目录；必须是绝对路径。
-- `--workspace worktree` / `worktree:<path>`：给编码任务创建 git worktree。
-- `--triage`：把粗略想法放进 `triage` 列，等待 `specify` / `decompose` 或自动拆解。
-- `--idempotency-key KEY`：适合 webhook / cron，重复调用返回已有 task，避免重复创建。
-- `--max-runtime`：单次 worker 最大运行时间。
-- `--max-retries`：覆盖该 task 的失败重试 / circuit breaker 上限。
-- `--skill <name>`：给这个 task 额外加载技能；可以多次传入，用于加载多个技能。
-
-### 16.6.4 依赖和生命周期
-```bash
-hermes kanban link <parent_id> <child_id>      # 建立依赖
-hermes kanban unlink <parent_id> <child_id>    # 删除依赖
-hermes kanban claim <id> [--ttl SECONDS]       # 手动原子认领 ready task；主要用于调试
-hermes kanban comment <id> "<text>" [--author NAME]  # 添加评论；下一次 worker 会在 kanban_show() 里读到
-hermes kanban complete <id> [--result "..."] [--summary "..."] [--metadata '{"key":"value"}']  # 完成 task；--summary/--metadata 是结构化交接信息
-hermes kanban complete <id>... [--result "..."]       # 批量完成；批量 close 不应使用同一份 --summary/--metadata
-hermes kanban block <id> "<reason>" [--ids <id>...]   # 阻塞 task，等待人或其他 profile 输入
-hermes kanban schedule <id> "<reason>"                # 暂缓指定 task
-hermes kanban unblock <id>...                         # 解除 blocked / scheduled。依赖都完成时回到 ready，否则回到 todo
-hermes kanban archive <id>...                         # 归档 task；默认列表不再显示，后续 gc 可清理 scratch workspace
-```
-
-生命周期类命令中，`complete`、`block`、`unblock`、`archive` 支持多个 task id，适合批量清理：
-
-```bash
-hermes kanban complete t_abcd1234 t_def56789 t_9876fedc --result "batch wrap"
-hermes kanban block t_abcd1234 "need input" --ids t_def56789 t_9876fedc
-hermes kanban unblock t_abcd1234 t_def56789
-hermes kanban archive t_abcd1234 t_def56789 t_9876fedc
-```
-
-### 16.6.5 Triage、规格化和拆解
-`triage` 列用于接收粗略想法。可以手动触发，也可以让 dispatcher 在 `kanban.auto_decompose: true` 时自动处理。
-
-```bash
-hermes kanban specify <id> [--author NAME] [--json]                 # 把 triage task 补全成明确 spec
-hermes kanban specify --all [--tenant T] [--author NAME] [--json]   # 批量规格化 triage task；可按 tenant 限定范围
-hermes kanban decompose <id> [--author NAME] [--json]               # 把 triage task 拆成子任务图，并根据 profile description 路由
-hermes kanban decompose --all [--tenant T] [--author NAME] [--json] # 批量拆解 triage task；可按 tenant 限定范围
-```
-
-`specify` 使用 `auxiliary.triage_specifier` 模型配置；`decompose` 使用 `auxiliary.kanban_decomposer` 模型配置。`decompose` 如果判断不需要 fan-out，会退化成类似 `specify` 的单任务补全。
-
-### 16.6.6 运行、日志和监控
-```bash
-hermes kanban tail <id>          # 跟踪单个 task 的事件流
-hermes kanban watch [--assignee P] [--tenant T] [--kinds completed,blocked,...] [--interval SECS]  # 观察整个 board 的事件流
-hermes kanban runs <id> [--json]             # 查看一个 task 的 run history；一次认领、启动、失败或完成就是一条 run
-hermes kanban stats [--json]                 # 查看状态和 assignee 统计
-hermes kanban log <id> [--tail BYTES]        # 查看 worker 日志
-hermes kanban context <id>                   # 打印 worker 会看到的完整上下文：title、body、父任务结果、评论等
-```
-
-### 16.6.7 Dispatcher 和维护
-```bash
-hermes kanban dispatch [--dry-run] [--max N] [--failure-limit N] [--json]  # 手动跑一次 dispatcher tick；用于调试或跳过默认 60 秒等待
-hermes kanban gc [--event-retention-days N] [--log-retention-days N]       # 清理归档 task 的 scratch workspace、旧事件、旧日志
-```
-
-### 16.6.8 Gateway 通知订阅
-从 Gateway 里用 `/kanban create ...` 创建的 task 会自动订阅 originating chat 的终态事件。脚本或 Cron 创建的 task 如果也想投递到某个平台，可以显式管理订阅：
-
-```bash
-# 订阅终态通知
-hermes kanban notify-subscribe <id> \
-  --platform <name> \
-  --chat-id <id> \
-  [--thread-id <id>] \
-  [--user-id <id>]
-hermes kanban notify-list [<id>] [--json]  # 查看订阅；不传 id 时列出全部
-# 取消订阅
-hermes kanban notify-unsubscribe <id> \
-  --platform <name> \
-  --chat-id <id> \
-  [--thread-id <id>]
-```
-
-task 到达 `done` 或 `archived` 后，订阅会自动移除。
-
-### 16.6.9 `/kanban` slash command
-所有 `hermes kanban <action>` 都可以在交互式 CLI 或消息平台 Gateway 中写成 `/kanban <action>`。两者复用同一套 argparse，所以参数和输出格式一致：
-
-```text
-/kanban list
-/kanban show t_abcd1234
-/kanban create "write launch post" --assignee writer --parent t_1234abcd
-/kanban comment t_abcd1234 "looks good, ship it"
-/kanban unblock t_abcd1234
-/kanban dispatch --max 3
-/kanban specify t_abcd1234
-/kanban specify --all --tenant engineering
-/kanban decompose t_abcd1234
-```
-
-`/kanban` 在 Gateway 中会绕过 running-agent guard：即使某个 agent 正在运行，也可以立刻执行 `list`、`show`、`comment`、`unblock`、`assign`、`archive` 等 board 操作。消息平台有长度限制，`/kanban list`、`/kanban show`、`/kanban tail` 的长输出可能被截断；终端里的 `hermes kanban ...` 没有这层消息长度限制。
+访问 Hermes Web UI → http://127.0.0.1:9119/kanban
 
 # 17. 案例：深度搜索
 ## 17.1 定位

@@ -1767,12 +1767,12 @@ Hermes Kanban 提供了一个可恢复、可审计、可中途介入的工作队
 - 人类或其他 Agent 介入
 - 任务可审计
 
-## 16.2 架构
+## 16.2 Kanban 架构
 三层架构：
 
 - 控制层：用户通过 CLI、Gateway 和 Dashboard 与 Kanban 交互，包括创建任务、查看进展、补充人工反馈
-- 状态层：共享看板，保存任务、依赖、评论、认领、心跳和执行记录；dispatcher 推进就绪任务、原子认领并启动 worker
-- 执行层：多个相互独立的 Agent 进程，worker 之间不直接通信，所有输入、输出、状态变化和交接都写回看板
+- 状态层：共享看板，保存任务、依赖、评论、认领、心跳和执行记录；调度器推进就绪任务、原子认领并启动 worker
+- 执行层：多个相互独立的 Agent 进程作为 worker，worker 之间不直接通信，所有输入、输出、状态变化和交接都写回看板
 
 ```text
 CONTROL
@@ -1942,7 +1942,10 @@ Worker 是调度器启动的独立 Hermes profile 进程。调度器启动 worke
 
 ## 16.5 任务分解与编排
 ### 16.5.1 Decomposer 与 Orchestrator Profile
-调度器推进任务状态，但无法执行任务编排：判断目标如何拆解、子任务分配给哪个 profile、以及子任务完成后整体目标是否完成。这些工作需要分解器（Decomposer）和编排 profile（Orchestrator Profile）来执行。
+调度器只负责推进任务状态，无法判断目标如何拆解、子任务如何分配、以及子任务完成后整体目标是否完成。这些工作需要分解器（Decomposer）和编排 profile（Orchestrator Profile）来执行。
+
+- Decomposer：Gateway 内的辅助 LLM 流程，负责把 `triage` task 拆成 JSON 任务图，并创建子任务和依赖关系。
+- Orchestrator Profile：普通 Hermes profile，负责承接 root task，读取子任务结果，判断整体目标是否完成，并在需要时追加任务或阻塞等待输入。
 
 任务分解与编排流程如下：
 
@@ -1955,9 +1958,9 @@ Worker 是调度器启动的独立 Hermes profile 进程。调度器启动 worke
 7. 调度器启动 root task 当前 `assignee` 对应的 profile worker。
 8. 编排器读取子任务结果，做总体验收和汇总：如果目标已经完成，就完成 root task；如果还缺步骤，就继续追加 task 或留下阻塞说明。
 
-分解器是在 Gateway 进程内运行的辅助 LLM 拆解流程。它支持自动和手动两种触发模式：
+分解器支持自动和手动两种触发模式：
 
-- 自动模式：调度器每个 tick 会自动触发分解器。
+- 自动模式：调度器每个 tick 自动触发分解器。
 - 手动模式：用户在 Dashboard 点 Decompose，或运行 `hermes kanban decompose <id>`，或在聊天里使用 `/kanban decompose <id>` 来触发分解器。
 
 相关配置：
@@ -1979,68 +1982,28 @@ auxiliary:
     model: ""
 ```
 
-### 16.5.3 Orchestrator Profile 的职责与约束
-Orchestrator profile 的职责是协调，不是执行。它应该做的事是：
+### 16.5.2 Orchestrator Profile
+Orchestrator profile 是普通 Hermes profile，用于拆解和汇总任务，不直接执行具体任务。除了承接分解器创建的 root task，它也可以作为人工直接对话的编排入口：用户把高层目标交给它，由它创建 Kanban task、建立依赖、跟踪下游结果并汇总进展。
 
-1. 读取用户目标，或读取一个被指派给自己的 root task。
-2. 判断这个目标是否需要拆分；如果目标不清楚，先向用户补充提问。
-3. 查看当前可用的 profile，确认哪些 profile 适合承担哪些子任务。
-4. 创建子任务，写清楚每个子任务的目标、执行说明、assignee 和依赖关系。
-5. 等待下游 task 完成后，读取它们的结果和评论，汇总整体进展。
-6. 判断总目标是否完成；如果完成，就完成 root task；如果还缺步骤，就继续创建下一批 task；如果卡住，就留下阻塞说明。
+主动对话时，orchestrator profile 依靠 profile description 中的编排职责，以及 `kanban` toolset 注入的 Kanban 指引来判断高层目标应该创建任务而不是直接执行。
 
-它不应该自己研究资料、改代码、写稿、跑测试或处理运维命令。如果一个任务已经具体到“去实现”“去验证”“去写成文档”，就应该进入新的 Kanban task，并交给对应 profile。
-
-如果不加约束，orchestrator profile 可能会自己处理任务，而不是把任务路由给合适的 profile。因此需要对 orchestrator profile 做一些约束：
-
-1. **禁用执行型工具**：推荐让 orchestrator profile 只拥有 board 和记忆相关能力，例如 `kanban`、`memory`，必要时再加 `messaging`，而不要给它 terminal、file、web、browser、code 等执行工具。这样模型无法自己处理任务，只能创建任务并委派。
-2. **加载 `kanban-orchestrator` skill**：这个内建的 skill 的作用是给 orchestrator profile 注入明确的行为约束：你是编排者，不是执行者；任何具体任务都创建 Kanban task 并指派给合适 profile；你的职责是拆解、路由、汇总，而不是研究、写作或编码。
-3. **基于真实 profile 路由**：orchestrator profile 在拆分任务前，应先发现本机真实存在的 profile，并根据这些 profile 的 description 路由；不要凭空编造 profile 名称。
-
-### 16.5.4 创建 orchestrator profile
-创建一个名为 `orchestrator` 的 profile，继承当前默认 profile 的模型和 API 配置，并把它配置为自动拆解后 root task 的默认 assignee。
+创建一个名为 `orchestrator` 的 profile，并把它配置为自动拆解后 root task 的默认 assignee：
 
 ```bash
-# 创建 orchestrator profile，并写入 profile description
 hermes profile create orchestrator --clone \
-  --description "Kanban 编排者。负责拆解高层目标、创建任务、指派真实存在的 profile、建立依赖关系、汇总下游结果；不直接执行研究、写作、编码或运维任务。"
+  --description "Kanban 编排者。负责拆解高层目标、创建任务、指派真实存在的 profile、建立依赖关系、汇总下游结果；不直接执行具体任务。"
 
-# 限制工具使用
+orchestrator tools enable kanban memory
 orchestrator tools disable terminal file web browser code_execution
 
-# 确认 bundled skill 已存在；如果缺失就恢复
-orchestrator skills list | grep kanban-orchestrator \
-  || orchestrator skills reset kanban-orchestrator --restore
-
-# root task 默认交给 orchestrator
 hermes config set kanban.orchestrator_profile orchestrator
-
-# 启用自动拆解
 hermes config set kanban.auto_decompose true
 ```
 
-两种常见使用方式。
-
-第一种是**直接和 orchestrator profile 聊天**，把高层目标交给它，让它创建 Kanban task：
+直接使用 orchestrator profile 时，可以把高层目标发给它，让它创建和管理 Kanban task：
 
 ```bash
-orchestrator chat -q "给后台加一个导出 CSV 功能：先确认现有报表模块中仍然承担业务价值的历史设计，再实现导出、补测试、写使用说明。"
-```
-
-第二种是**把粗略任务放进 `triage`**，让 decomposer 先拆第一轮，随后由 `orchestrator` 承接 root task：
-
-```bash
-hermes kanban create "把用户设置页迁到新前端框架，并保持所有历史交互习惯不被用户察觉：梳理旧逻辑、实现迁移、补回归测试和上线检查" --triage
-```
-
-在 `kanban.auto_decompose: true` 时，dispatcher 后续 tick 会触发 decomposer。decomposer 创建子任务后，会把原始 `triage` task 变成 root task，并把它的 `assignee` 设为 `kanban.orchestrator_profile`，也就是上面配置的 `orchestrator`。
-
-如果要让 decomposer 更准确地把任务分给其他 profile，还需要给可执行工作的 profile 写清楚 description：
-
-```bash
-hermes profile create researcher --description "负责查阅文档、源码和资料，产出结构化研究结论。" --clone
-hermes profile create writer --description "负责把已有材料整理成清晰、连贯的文档。" --clone
-hermes profile create reviewer --description "负责审查文档或代码变更，指出遗漏、错误和风险。" --clone
+orchestrator chat -q "给后台加一个导出 CSV 功能：先梳理现有报表逻辑，再实现导出、补测试、写使用说明。"
 ```
 
 ## 16.6 Multi-Tenant Context：多租户上下文
@@ -2113,6 +2076,7 @@ Hermes 会按以下优先级决定要操作的 board：
 ### 16.7.1 快速启动
 ```bash
 hermes kanban init      # 幂等创建默认 kanban.db，已存在时不会破坏数据
+hermes gateway install  # 安装 Gateway 为用户服务
 hermes gateway start    # 启动 Gateway
 hermes kanban create "research Hermes Agent" --assignee researcher  # 创建任务
 hermes kanban watch     # 实时观察事件

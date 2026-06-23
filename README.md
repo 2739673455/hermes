@@ -18,7 +18,7 @@ https://hermes-agent.nousresearch.com/
 14. [Cron](#14-cron)
 15. [Delegation](#15-delegation)
 16. [Kanban](#16-kanban)
-17. [案例：深度搜索](#17-案例深度搜索)
+17. [案例：深度研究](#17-案例深度研究)
 
 # 1. Hermes Agent 是什么
 Hermes Agent 是由开源 AI 研究实验室 Nous Research 开发的开源 AI Agent 框架，具有以下核心特性：
@@ -2024,16 +2024,17 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 
 访问 Hermes Web UI → http://127.0.0.1:9119/kanban
 
-# 17. 案例：深度搜索
+# 17. 案例：深度研究
 ## 17.1 功能
 - 计划制定：在执行检索前生成研究方案
-- 用户可控：在细节澄清、研究方案、补充来源和章节重跑等节点允许用户介入
+- 用户可控：在边界确认、研究方案、补充来源和章节重跑等节点允许用户介入
 - 多源研究：支持公开网页、指定网站、上传文件、内部知识库、数据库和外部 API
 - 可追溯引用：每个关键判断通过证据链关联来源和事实卡片
 - 长任务可恢复：使用 Kanban 保存任务状态、依赖、日志、失败重试和人工处理记录
+- 过程可审计：记录用户确认、任务拆解、来源采用、章节重跑和报告渲染事件
 - 章节级重跑：每个章节独立检索、写作和保存，可单章重跑
 - 工具可扩展：通过 MCP 接入搜索、网页读取、知识库、企业系统和报告渲染工具
-- HTML 交付：输出 HTML
+- HTML 交付：基于结构化研究结果确定性生成 HTML
 
 ## 17.2 Profile 规划
 | Profile                 | 职责                                                                 |
@@ -2043,23 +2044,24 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 | `source-reviewer`       | 来源去重、可信度评估、冲突识别、证据链整理和风险记录                 |
 | `section-writer`        | 章节正文、关键发现、表格、图表、证据链和章节风险写作                 |
 | `synthesis-writer`      | 汇总执行摘要、核心结论、跨章节洞察、建议和全局风险                   |
-| `report-renderer`       | 生成 HTML                                                            |
+| `report-renderer`       | 基于 `ResearchResult` 确定性生成 HTML                                |
 
 ## 17.3 流程与任务图
 1. `research-orchestrator` 接收研究需求。
-2. `research-orchestrator` 通过交互式、渐进式、循环式对话澄清必须细节。
+2. `research-orchestrator` 通过交互式、渐进式、循环式对话确认必要研究边界。
 3. 信息足够后，`research-orchestrator` 生成研究方案。
 4. 用户确认或修改研究方案。
 5. `research-orchestrator` 拆解检索、来源审查和章节写作任务。
-6. 下游 profile 完成任务后，进入综合和渲染。
-7. 任一非编排 profile 发现需要修正或扩展任务时，都向 `research-orchestrator` 反馈触发原因、待回答问题和建议动作。
-8. `research-orchestrator` 判断是否追加检索、来源审查、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
+6. 每个章节按检索、来源审查、章节写作、章节校验的顺序执行。
+7. 所有章节校验通过后，进入综合、结果校验和报告渲染。
+8. 任一非编排 profile 发现需要修正或扩展任务时，都向 `research-orchestrator` 反馈触发原因、待回答问题和建议动作。
+9. `research-orchestrator` 判断是否追加检索、来源审查、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
 
 ```text
 root: research_request
   |
   v
-human: clarify_required_details_loop
+human: confirm_required_scope_loop
   |
   v
 task: generate_research_scheme
@@ -2070,20 +2072,15 @@ human: confirm_research_scheme
   v
 task: decompose_research_tasks
   |
-  +--> task: search_section_1
-  +--> task: search_section_2
-  +--> task: search_section_3
-  |
-  +--> task: review_sources_1
-  +--> task: review_sources_2
-  +--> task: review_sources_3
-  |
-  +--> task: write_section_1
-  +--> task: write_section_2
-  +--> task: write_section_3
+  +--> task: search_section_1 -> task: review_sources_1 -> task: write_section_1 -> task: validate_section_1
+  +--> task: search_section_2 -> task: review_sources_2 -> task: write_section_2 -> task: validate_section_2
+  +--> task: search_section_3 -> task: review_sources_3 -> task: write_section_3 -> task: validate_section_3
   |
   v
 task: synthesize_research_result
+  |
+  v
+task: validate_research_result
   |
   v
 task: render_report
@@ -2093,7 +2090,24 @@ task: render_report
 
 章节任务使用同一个 `project_id` 和不同的 `section_id`。章节写作任务必须保存 `ResearchSection` 后才能完成。报告渲染任务只读取 `ResearchResult`，不新增事实、来源或结论。
 
-## 17.4 数据对象
+## 17.4 研究方案
+研究方案用于固化执行边界，用户确认后作为任务拆解、检索、写作和验收依据。
+
+| 字段                  | 说明                                      |
+| --------------------- | ----------------------------------------- |
+| `research_goal`       | 研究目标和最终需要回答的问题              |
+| `scope`               | 研究范围                                  |
+| `excluded_scope`      | 明确不研究的范围                          |
+| `key_questions`       | 必须回答的关键问题                        |
+| `assumptions`         | 默认假设                                  |
+| `search_strategy`     | 检索策略、关键词方向和来源优先级          |
+| `source_requirements` | 来源类型、可信度、时效性和覆盖要求        |
+| `outline`             | 章节结构、章节问题和章节证据需求          |
+| `deliverables`        | HTML 报告、表格、图表、执行摘要等交付内容 |
+| `acceptance_criteria` | 验收标准                                  |
+| `risk_boundary`       | 已知限制、不确定性和需谨慎表达的结论边界  |
+
+## 17.5 数据对象
 | 对象                | 作用                                                                                                                                     |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `ResearchRequest`   | 用户原始研究需求和补充细节                                                                                                               |
@@ -2103,13 +2117,29 @@ task: render_report
 | `EvidenceChain`     | 关键判断、事实编号、来源编号和置信度                                                                                                     |
 | `FactCard`          | 可复核事实、来源编号、置信度和适用范围                                                                                                   |
 | `InsightCard`       | 基于事实形成的判断、支撑事实和适用边界                                                                                                   |
+| `Recommendation`    | 基于洞察形成的建议动作、适用条件和风险前提                                                                                               |
+| `RiskNote`          | 证据不足、口径差异、时效性不足、样本偏差和结论边界                                                                                       |
 | `ResearchSection`   | 单章正文、关键发现、证据链、来源、表格、图表和风险说明                                                                                   |
 | `ResearchSynthesis` | 执行摘要、核心结论、跨章节洞察、建议和全局风险                                                                                           |
 | `ResearchResult`    | 报告渲染前的完整结构化研究结果                                                                                                           |
 | `DocumentIR`        | 报告展示中间表示                                                                                                                         |
 | `ReportVersion`     | 最终报告版本、格式、来源列表和存储地址                                                                                                   |
 
-## 17.5 证据契约
+## 17.6 来源质量标准
+来源审查按可信度、相关性、时效性和偏差风险记录来源质量。
+
+| 字段            | 说明                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------ |
+| `source_type`   | 官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容、内部知识库 |
+| `reliability`   | `high`、`medium`、`low`                                                                    |
+| `recency`       | 发布时间和时效性判断                                                                       |
+| `relevance`     | 与章节问题和关键判断的相关度                                                               |
+| `bias_risk`     | 商业宣传、立场偏向、二手转述、样本不足等风险                                               |
+| `usable_claims` | 可用于支撑报告判断的事实或数据                                                             |
+
+来源优先级默认按官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容排序。内部知识库不伪装成公开来源。
+
+## 17.7 证据契约
 章节中的关键判断必须满足以下约束：
 
 - 每条关键判断必须写入 `EvidenceChain`。
@@ -2120,17 +2150,64 @@ task: render_report
 - 口径差异、来源不足、时效性不足和样本偏差必须写入风险说明。
 - 报告渲染阶段不得新增事实、来源、判断或证据链。
 
-## 17.6 Skill 规划
+## 17.8 质量校验
+章节校验规则：
+
+- 章节必须对应已确认大纲节点。
+- 章节正文不能为空，不能包含占位内容。
+- 每章至少包含一条关键发现。
+- 每章至少包含一条证据链。
+- 证据链引用的 `source_id` 必须存在于章节来源或项目来源中。
+- 公开来源必须提供 HTTP URL，内部知识库来源必须标记来源类型。
+- 章节风险说明必须记录证据不足、口径冲突、时效性或适用边界。
+
+研究结果校验规则：
+
+- 所有需要正文的章节都已保存。
+- 所有章节均通过章节校验。
+- 全局来源列表去重完成。
+- `FactCard`、`InsightCard`、`Recommendation` 和 `RiskNote` 与章节证据链一致。
+- 报告渲染输入不包含占位内容。
+
+## 17.9 重跑和扩展
+章节级重跑触发条件：
+
+- 来源不足。
+- 来源冲突严重。
+- 用户补充新来源。
+- 章节结论不符合研究方案。
+- 证据链缺失或引用来源无效。
+- 章节风险边界不完整。
+- 报告渲染正常但指定章节内容需要重写。
+
+非编排 profile 反馈格式：
+
+```json
+{
+  "reason": "来源不足",
+  "affected_section_ids": ["2.1"],
+  "question_to_answer": "是否允许使用英文行业报告？",
+  "suggested_action": "追加检索",
+  "required_user_input": false
+}
+```
+
+## 17.10 记忆与审计
+- 记忆用于保存用户偏好、历史研究边界、常用来源和常用报告格式。
+- 本次研究方案、用户确认和 Kanban 任务图优先级高于历史记忆。
+- 审计日志记录用户确认、任务拆解、来源采用、章节重跑、质量校验和报告渲染事件。
+
+## 17.11 Skill 规划
 | Skill                        | 输入                                       | 输出                                            |
 | ---------------------------- | ------------------------------------------ | ----------------------------------------------- |
-| `deepresearch-orchestrator`  | 研究需求、用户补充细节、用户反馈、任务状态 | 研究方案、Kanban 任务图                         |
+| `deepresearch-orchestrator`  | 研究需求、用户补充边界、用户反馈、任务状态 | 研究方案、Kanban 任务图                         |
 | `deepresearch-search`        | 检索问题、来源偏好、约束、已有来源         | 原始搜索结果、网页摘要、知识库片段、候选来源    |
 | `deepresearch-source-review` | 候选来源、原文摘要、知识库片段、检索问题   | `Source`、`EvidenceChain`、`FactCard`、风险说明 |
 | `deepresearch-section`       | 章节节点、证据链、事实卡片、来源、章节要求 | `ResearchSection`                               |
 | `deepresearch-synthesis`     | 所有章节、事实卡片、洞察卡片、风险说明     | `ResearchSynthesis`                             |
 | `deepresearch-report`        | `ResearchResult`、展示要求、输出格式       | `DocumentIR`、`ReportVersion`                   |
 
-## 17.7 MCP 工具
+## 17.12 MCP 工具
 | 工具                    | 输入                                 | 输出                               |
 | ----------------------- | ------------------------------------ | ---------------------------------- |
 | `search_web`            | 查询词、站点过滤、时间过滤、结果数量 | 公开搜索结果                       |

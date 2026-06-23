@@ -1771,7 +1771,7 @@ Hermes Kanban 提供了一个可恢复、可审计、可中途介入的工作队
 三层架构：
 
 - 控制层：用户通过 CLI、Gateway 和 Dashboard 与 Kanban 交互，包括创建任务、查看进展、补充人工反馈
-- 状态层：共享 SQLite 看板，保存任务、依赖、评论、认领、心跳和执行记录；dispatcher 推进 ready、原子认领并启动 worker
+- 状态层：共享看板，保存任务、依赖、评论、认领、心跳和执行记录；dispatcher 推进就绪任务、原子认领并启动 worker
 - 执行层：多个相互独立的 Agent 进程，worker 之间不直接通信，所有输入、输出、状态变化和交接都写回看板
 
 ```text
@@ -1810,53 +1810,21 @@ EXECUTION
 ```
 
 ## 16.3 Kanban 核心概念
-### 16.3.1 Board：任务板
-Board 是一个独立的任务队列，拥有自己的 SQLite 数据库、workspaces 目录和调度循环。可以有多个 board，例如按项目、仓库或业务域拆分；如果只使用单项目工作流，默认使用 `default` board。
+### 16.3.1 Board
+Board 是一个独立的任务队列，拥有自己的：
+- SQLite 数据库 (`~/.hermes/kanban/boards/<slug>/kanban.db`)
+- workspaces 目录
+- logs 目录
+- 调度器
 
-默认 board 的数据库位于 `~/.hermes/kanban.db`。非默认 board 位于 `~/.hermes/kanban/boards/<slug>/` 下，并拥有独立的 `kanban.db`、`workspaces/` 和 `logs/`。dispatcher 启动 worker 时会固定 `HERMES_KANBAN_BOARD`，让 worker 只看到自己所属的 board。
+可以有多个 board。调度器启动 worker 时会固定 `HERMES_KANBAN_BOARD`，让 worker 只看到自己所属的 board。默认 board 的数据库位于 `~/.hermes/kanban.db`。
 
-### 16.3.2 Task：任务
-Task 是 Kanban 的基本工作单元，一个 Task 对应数据库中的一行记录，通常包含标题、正文、一个指派、状态、优先级、workspace 设置等。
-
-一个 task 只有一个 `assignee`，它通常是 Hermes profile 名称。
-
-`tasks` 表结构：
-
-```sql
-CREATE TABLE IF NOT EXISTS tasks (
-    id                   TEXT PRIMARY KEY,             -- 任务 ID，例如 t_abcd1234
-    title                TEXT NOT NULL,                -- 标题
-    body                 TEXT,                         -- 任务正文 / 初始说明
-    assignee             TEXT,                         -- 指派的 Hermes profile
-    status               TEXT NOT NULL,                -- 任务状态
-    priority             INTEGER DEFAULT 0,            -- 优先级，越大越先调度
-    created_by           TEXT,                         -- 创建者，profile 或 user
-    created_at           INTEGER NOT NULL,             -- 创建时间，Unix 时间戳
-    started_at           INTEGER,                      -- 首次开始时间
-    completed_at         INTEGER,                      -- 完成时间
-    workspace_kind       TEXT NOT NULL DEFAULT 'scratch', -- scratch/worktree/dir
-    workspace_path       TEXT,                         -- claim 时解析出的实际工作目录
-    claim_lock           TEXT,                         -- 认领锁，通常是 host:pid
-    claim_expires        INTEGER,                      -- 认领过期时间
-    tenant               TEXT,                         -- 租户 / 命名空间
-    result               TEXT,                         -- 任务最终结果
-    idempotency_key      TEXT,                         -- 幂等键，避免重复创建
-    consecutive_failures INTEGER NOT NULL DEFAULT 0,   -- 连续失败计数
-    worker_pid           INTEGER,                      -- 当前 worker 子进程 PID
-    last_failure_error   TEXT,                         -- 最近一次失败摘要
-    max_runtime_seconds  INTEGER,                      -- 最大运行时长
-    last_heartbeat_at    INTEGER,                      -- 最近心跳时间
-    current_run_id       INTEGER,                      -- 当前 task_runs 记录 ID
-    workflow_template_id TEXT,                         -- workflow 模板 ID，预留
-    current_step_key     TEXT,                         -- 当前 workflow step，预留
-    skills               TEXT,                         -- 额外强制加载的 skills，JSON
-    max_retries          INTEGER                       -- 单任务重试阈值
-);
-```
+### 16.3.2 Task
+Task 是 Kanban 的基本工作单元，一个 Task 对应数据库中 `tasks` 表的一行记录，通常包含标题、正文、一个指派人、状态、workspace、租户等。
 
 task 的状态包括：
 
-| 状态        | 中文说明                                                         |
+| 状态        | 说明                                                             |
 | ----------- | ---------------------------------------------------------------- |
 | `triage`    | 待分流 / 待明确，通常还需要补充信息或拆解                        |
 | `todo`      | 已创建但尚未满足运行条件，可能还在等待父任务完成                 |
@@ -1868,41 +1836,13 @@ task 的状态包括：
 | `done`      | 已完成                                                           |
 | `archived`  | 已归档，不再参与正常调度                                         |
 
-用户、脚本、decomposer 或 worker 都可以创建 task。普通任务只有进入 `ready` 后才会被 dispatcher 认领并启动；`review` 是单独的审查队列，dispatcher 会启动对应 assignee 的 review worker，并强制加载 `sdlc-review` skill。`scheduled` 不会被直接调度，需要通过 cron、人工操作或自动化恢复到 `ready` / `todo`。
+### 16.3.3 Link
+Link 是 task 之间的父子依赖，对应 `task_links` 表中的一行 (`parent_id - child_id`) 记录。当所有父任务都为 `done` / `archived` 后，调度器会把子任务推进到 `ready`。
 
-### 16.3.3 Link：任务的依赖关系
-Link 是 task 之间的父子依赖，对应 `task_links` 表中的 `parent_id -> child_id`。父任务完成之前，子任务保持在 `todo` 或等待状态；当所有父任务都为 `done` / `archived` 后，dispatcher 会把子任务推进到 `ready`。
+### 16.3.4 Comment
+Comment 是人类或 Agent 在 task 上追加的持久消息，也是 Kanban 的跨 Agent 交接协议，对应 `task_comments` 表。worker 被启动或重新启动时，会读取完整评论串。人类可以通过评论补充要求、回答 worker 的问题、纠正方向；Agent 也可以通过评论留下中间发现、交接说明。
 
-这个机制让 Kanban 可以表达常见任务流程：一个任务可以展开成多个下游任务（fan-out），多个上游任务也可以汇合到同一个下游任务（fan-in）；下游任务会等依赖满足后再启动。
-
-`task_links` 表结构：
-
-```sql
-CREATE TABLE IF NOT EXISTS task_links (
-    parent_id  TEXT NOT NULL, -- 父任务 ID，上游任务
-    child_id   TEXT NOT NULL, -- 子任务 ID，下游任务
-    PRIMARY KEY (parent_id, child_id)
-);
-```
-
-### 16.3.4 Comment：任务的评论 / 交接记录
-Comment 是人类和 Agent 在 task 上追加的持久消息，也是 Kanban 的跨 Agent 交接协议。worker 被启动或重新启动时，会读取 task 正文、父任务结果、历史运行记录和完整评论串。
-
-因此，评论不是临时聊天记录，而是任务上下文的一部分。人类可以通过评论补充要求、回答 worker 的问题、纠正方向；Agent 也可以通过评论留下中间发现、交接说明或阻塞原因。
-
-`task_comments` 表结构：
-
-```sql
-CREATE TABLE IF NOT EXISTS task_comments (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT, -- 评论 ID
-    task_id    TEXT NOT NULL,                    -- 所属任务 ID
-    author     TEXT NOT NULL,                    -- 作者，profile 或 user
-    body       TEXT NOT NULL,                    -- 评论正文
-    created_at INTEGER NOT NULL                  -- 创建时间，Unix 时间戳
-);
-```
-
-### 16.3.5 Event：任务事件
+### 16.3.5 Event
 Event 是 Kanban 的任务审计日志，对应 `task_events` 表。它记录 task 生命周期里的状态变化、人工编辑和 worker 执行遥测，例如创建、指派、依赖满足后从 `todo` 推进到 `ready`（`promoted`）、dispatcher 认领、worker 启动、心跳、完成、阻塞、崩溃、超时、恢复，以及熔断器放弃重试（`gave_up`）。
 
 `task_runs` 是每次 worker 执行尝试的记录表，用来保存本次运行的 profile、开始 / 结束时间、结果摘要、metadata 和错误信息；`task_events` 可以通过 `run_id` 关联到某一次执行尝试，并把这些变化串成按时间排序的审计轨迹。

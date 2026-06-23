@@ -2017,17 +2017,12 @@ hermes config set kanban.auto_decompose true
 hermes kanban [--board <slug>] <action> [options]
 ```
 
-Hermes 会按以下优先级决定要操作的 board：
-
-1. CLI 显式传入的 `--board <slug>`
-2. 环境变量 `HERMES_KANBAN_BOARD`
-3. `~/.hermes/kanban/current`
-4. `default`
+Hermes 会按 `--board <slug>` -> `HERMES_KANBAN_BOARD` -> `~/.hermes/kanban/current` -> `default` 的优先级决定要操作的 board。
 
 ### 16.6.1 快速启动
 ```bash
-hermes kanban init      # 幂等创建默认 kanban.db，已存在时不会破坏数据
-hermes gateway install  # 安装 Gateway 为用户服务
+hermes kanban init      # 创建 kanban.db，已存在时不会破坏数据
+hermes gateway install  # 安装 Gateway 为服务
 hermes gateway start    # 启动 Gateway
 hermes kanban create "research Hermes Agent" --assignee researcher  # 创建任务
 hermes kanban watch     # 实时观察事件

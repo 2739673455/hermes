@@ -167,11 +167,15 @@ CLI 命令：
 ```bash
 hermes sessions list                         # 列出近期会话
 hermes sessions browse                       # 打开交互式会话选择器
-hermes --continue, -c                        # 继续上次会话
-hermes --resume, -r                          # 按会话 ID 或标题恢复对话
 hermes sessions rename <session-id> <title>  # 重命名会话
 hermes sessions delete <session_id>          # 删除会话
 hermes sessions prune --older-than 30        # 清理 30 天前的旧会话
+hermes [chat] --continue, -c                 # 继续上次会话
+hermes [chat] --resume, -r                   # 按会话 ID 或标题恢复对话
+hermes [chat] -t, --toolsets <csv>           # 启用逗号分隔的 toolset 集合
+hermes [chat] -s, --skills <name>            # 为会话预加载一个或多个 skill
+hermes [chat] --worktree                     # 为本次运行创建隔离的 git worktree
+hermes [chat] --checkpoints                  # 在破坏性文件变更前启用文件系统 checkpoint
 ```
 
 斜杠命令：
@@ -1941,7 +1945,6 @@ Worker 是调度器启动的独立 Hermes profile 进程。调度器启动 worke
    ```
 
 ## 16.5 任务分解与编排
-### 16.5.1 Decomposer 与 Orchestrator Profile
 调度器只负责推进任务状态，无法判断目标如何拆解、子任务如何分配、以及子任务完成后整体目标是否完成。这些工作需要分解器（Decomposer）和编排 profile（Orchestrator Profile）来执行。
 
 - Decomposer：Gateway 内的辅助 LLM 流程，负责把 `triage` task 拆成 JSON 任务图，并创建子任务和依赖关系。
@@ -1982,28 +1985,15 @@ auxiliary:
     model: ""
 ```
 
-### 16.5.2 Orchestrator Profile
-Orchestrator profile 是普通 Hermes profile，用于拆解和汇总任务，不直接执行具体任务。除了承接分解器创建的 root task，它也可以作为人工直接对话的编排入口：用户把高层目标交给它，由它创建 Kanban task、建立依赖、跟踪下游结果并汇总进展。
-
-主动对话时，orchestrator profile 依靠 profile description 中的编排职责，以及 `kanban` toolset 注入的 Kanban 指引来判断高层目标应该创建任务而不是直接执行。
-
-创建一个名为 `orchestrator` 的 profile，并把它配置为自动拆解后 root task 的默认 assignee：
+创建 `orchestrator` profile，并把它配置为自动拆解后 root task 的默认 assignee：
 
 ```bash
-hermes profile create orchestrator --clone \
-  --description "Kanban 编排者。负责拆解高层目标、创建任务、指派真实存在的 profile、建立依赖关系、汇总下游结果；不直接执行具体任务。"
+hermes profile create orchestrator --clone
 
-orchestrator tools enable kanban memory
 orchestrator tools disable terminal file web browser code_execution
 
 hermes config set kanban.orchestrator_profile orchestrator
 hermes config set kanban.auto_decompose true
-```
-
-直接使用 orchestrator profile 时，可以把高层目标发给它，让它创建和管理 Kanban task：
-
-```bash
-orchestrator chat -q "给后台加一个导出 CSV 功能：先梳理现有报表逻辑，再实现导出、补测试、写使用说明。"
 ```
 
 ## 16.6 Multi-Tenant Context：多租户上下文

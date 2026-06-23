@@ -1838,7 +1838,7 @@ task 的状态包括：
 | `archived`  | 已归档，不再参与正常调度                                         |
 
 ### 16.3.3 Link
-Link 是 task 之间的父子依赖，对应 `task_links` 表中的一行 (`parent_id - child_id`) 记录。当所有父任务都为 `done` / `archived` 后，调度器会把子任务推进到 `ready`。
+Link 是 task 之间的父子依赖，对应 `task_links` 表中的一行 (`parent_id -> child_id`) 记录。当所有父任务都为 `done` / `archived` 后，调度器会把子任务推进到 `ready`。
 
 ### 16.3.4 Comment
 Comment 是人类或 Agent 在 task 上追加的持久消息，也是 Kanban 的跨 Agent 交接协议，对应 `task_comments` 表。worker 被启动或重新启动时，会读取完整评论串。人类可以通过评论补充要求、回答 worker 的问题、纠正方向；Agent 也可以通过评论留下中间发现、交接说明。
@@ -1940,43 +1940,41 @@ Worker 是调度器启动的独立 Hermes profile 进程。调度器启动 worke
    task: post daily story for acct-50  -> assignee=insta-manager, workspace=dir:~/insta/acct-50/
    ```
 
-## 16.5 Orchestrator Profile
+## 16.5 任务分解与编排
 ### 16.5.1 Decomposer 与 Orchestrator Profile
-Kanban 状态层负责推进任务队列，但不负责理解目标：
+调度器推进任务状态，但无法执行任务编排：判断目标如何拆解、子任务分配给哪个 profile、以及子任务完成后整体目标是否完成。这些工作需要分解器（Decomposer）和编排 profile（Orchestrator Profile）来执行。
 
-- **SQLite board** 保存 task、依赖、评论、结果和事件记录。
-- **dispatcher** 每个 tick 根据 `task_links` 重新计算依赖是否满足，把符合条件的 `todo` task 推进到 `ready`；随后认领 `ready` task，并启动对应的 profile worker。
+任务分解与编排流程如下：
 
-这些组件不会自己进行“编排”：判断目标应该如何拆解、每一步该交给哪个 profile、子任务完成后整体是否已经完成。
+1. `triage` task 进入分解流程。
+2. 分解器读取 `triage` task 的标题和正文、可用 profile 及其描述。
+3. 分解器生成 JSON 任务图，描述 task 是否需要拆分、要创建哪些子任务、每个子任务分配给谁，以及子任务之间的依赖关系。
+4. 分解器根据 JSON 任务图创建子任务，并建立子任务之间的依赖关系。
+5. 原始 `triage` task 变成 root task，作为子任务图完成后的汇总任务，并将 `assignee` 设置为 `kanban.orchestrator_profile`。
+6. 子任务全部完成后，root task 推进到 `ready`。
+7. 调度器启动 root task 当前 `assignee` 对应的 profile worker。
+8. 编排器读取子任务结果，做总体验收和汇总：如果目标已经完成，就完成 root task；如果还缺步骤，就继续追加 task 或留下阻塞说明。
 
-因此，Kanban 把编排放在状态层之外处理，并分成两个阶段：
+分解器是在 Gateway 进程内运行的辅助 LLM 拆解流程。它支持自动和手动两种触发模式：
 
-1. **第一阶段：decomposer 处理 `triage` task**。Kanban 内存在一个 decomposer 用于拆解 `triage` task，有自动和手动两种模式。
-   - 自动模式下，dispatcher 每个 tick 会自动触发 decomposer。
-   - 手动模式下，`triage` task 会留在任务板上，直到用户在 Dashboard 点 Decompose，或运行 `hermes kanban decompose <id>`，或在聊天里使用 `/kanban decompose <id>` 来触发 decomposer。
-   - decomposer 不是 profile，也不是 worker，而是在 Gateway 进程内运行的辅助 LLM 拆解流程。它被触发后会执行如下流程：
-     1. 读取 `triage` task 的标题和正文。
-     2. 读取可用 profile 及其 description，并读取 `kanban.default_assignee` 作为兜底 assignee。
-     3. 调用 `auxiliary.kanban_decomposer` 配置的模型，生成 task graph JSON。这个 JSON 描述是否需要拆分、要创建哪些子任务、每个子任务交给哪个 profile，以及子任务之间的依赖关系。
-     4. 如果 LLM 判断需要 fan-out，decomposer 会根据 JSON task graph 更新 board：创建子任务、写入 assignee、建立依赖，并把原始 `triage` task 改成 root task。root task 的 `assignee` 设置为 `kanban.orchestrator_profile`，并等待所有子任务完成。
-     5. 如果 LLM 判断不需要 fan-out，decomposer 会把原 `triage` task 改写成更完整的单任务说明，并推进到可调度状态。
-2. **第二阶段：orchestrator profile 承接 root task**。子任务完成后，root task 会回到 `ready`，dispatcher 会启动 root task 当前 `assignee` 对应的 profile worker。默认情况下，这个 `assignee` 是 decomposer 根据 `kanban.orchestrator_profile` 写入的 profile。这个 worker 会读取子任务结果，做总体验收和汇总：如果目标已经完成，就完成 root task；如果还缺步骤，就继续追加 task 或留下阻塞说明。
+- 自动模式：调度器每个 tick 会自动触发分解器。
+- 手动模式：用户在 Dashboard 点 Decompose，或运行 `hermes kanban decompose <id>`，或在聊天里使用 `/kanban decompose <id>` 来触发分解器。
 
-除了自动拆解后的 root task `assignee` 设置为 `kanban.orchestrator_profile`，用户也可以直接和某个 orchestrator profile 交流，把高层目标交给它，让它手动创建 task、指派 profile、建立依赖。也就是说，orchestrator profile 在手动编排中可以做“拆解任务”的工作，效果上类似 decomposer；但它是一个普通 Hermes profile，通过 Kanban 工具操作 board，不是 Gateway 内部的 decomposer 流程。
-
-### 16.5.2 Auto Decompose 相关配置
-相关配置项：
+相关配置：
 
 ```yaml
 # ~/.hermes/config.yaml
 kanban:
-  auto_decompose: true        # 是否让 dispatcher 自动拆解 triage 任务
-  auto_decompose_per_tick: 3  # 每个 dispatcher tick 最多拆解几个 triage 任务
+  auto_decompose: true        # 是否让调度器每 tick 自动运行分解器
+  auto_decompose_per_tick: 3  # 每个 tick 最多拆解几个 triage 任务
   orchestrator_profile: ""    # root task 的默认 assignee；空值表示使用当前默认 profile
-  default_assignee: ""        # LLM 选到未知 profile 时的兜底 assignee；空值表示使用当前默认 profile
+  default_assignee: ""        # 指派到未知 profile 时的兜底；空值表示使用当前默认 profile
 
 auxiliary:
-  kanban_decomposer:          # Decompose 使用的辅助模型
+  kanban_decomposer:          # 分解器的辅助模型
+    provider: ""
+    model: ""
+  profile_describer:          # 自动生成 profile 描述的辅助模型
     provider: ""
     model: ""
 ```

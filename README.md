@@ -2026,10 +2026,10 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 
 # 17. 案例：深度研究
 ## 17.1 功能
-- 多源研究：支持公开网页、指定网站、上传文件、内部知识库、数据库和外部 API
-- 可追溯引用：每个关键判断通过证据链关联来源和事实卡片
-- 章节级重跑：每个章节独立检索、写作和保存，可单章重跑
-- HTML 交付：基于结构化研究结果确定性生成 HTML
+- 多源：支持公开网页、指定来源、上传文件、内部知识库、数据库和外部 API
+- 追溯：每个关键判断通过证据链关联来源和事实卡片
+- 重跑：每个章节独立检索、写作和保存，可单章重跑
+- 交付：基于结构化研究结果确定性生成 HTML
 
 ## 17.2 角色规划
 - `research-orchestrator`：理解需求、澄清细节、生成研究方案、拆分任务、即时调整、汇总
@@ -2037,7 +2037,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - `source-reviewer`：来源去重、可信度评估、冲突识别、证据链整理和风险记录
 - `section-writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
 - `quality-reviewer`：章节校验、结果校验、证据引用检查、占位内容检查和返工建议
-- `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议和全局风险
+- `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源去重并组装 `ResearchResult`
 - `report-renderer`：基于 `ResearchResult` 确定性生成 HTML
 
 ## 17.3 流程与任务图
@@ -2047,7 +2047,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 4. 用户确认或修改研究方案。
 5. `research-orchestrator` 拆解检索、来源审查、章节写作、质量校验、综合和渲染任务。
 6. 每个章节按检索、来源审查、章节写作、章节校验的顺序执行。
-7. 所有章节校验通过后，进入综合、结果校验和报告渲染。
+7. 所有章节校验通过后，进入综合、全局来源去重、`ResearchResult` 组装、结果校验和报告渲染。
 8. 任一非编排角色发现需要调整或扩展任务时，都向 `research-orchestrator` 反馈触发原因、待回答问题和建议动作。
 9. `research-orchestrator` 判断是否追加检索、来源审查、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
 
@@ -2083,10 +2083,10 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
   +------------------------------+
   |
   v
-任务：综合研究结果
+任务：综合研究结果并组装 ResearchResult
   |
   v
-任务：校验研究结果
+任务：校验 ResearchResult
   |
   v
 任务：渲染报告
@@ -2094,125 +2094,86 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
   +--> 可选：请求编排器调整
 ```
 
-## 17.4 研究方案
-研究方案用于固化执行边界，用户确认后作为任务拆解、检索、写作和验收依据。
+## 17.4 `research-orchestrator`
+`research-orchestrator` 负责研究项目的入口、边界确认、方案生成、任务拆解、进度协调和返工调度。
 
-- `research_goal` — 研究目标和最终需要回答的问题
-- `key_questions` — 必须回答的关键问题
-- `scope` — 研究边界与约束，包括研究范围、排除项和口径限制
-- `assumptions` — （可选）执行研究时默认采用的前提假设
-- `methodology` — （可选）分析方法，如 SWOT、PEST、对比分析、案例研究、定量分析等
-- `search_strategy` — 检索方法与来源筛选标准，包括检索方向、搜索范围、来源类型优先级、可信度与时效性要求
-- `known_sources` — （可选）已知要查阅的具体数据库、文档、平台或内部知识库清单
-- `outline` — 章节结构、章节目标和章节证据要求
-- `deliverables` — 最终交付内容，包括 HTML 报告、执行摘要、表格、图表和数据附录
-- `acceptance_criteria` — 验收标准，包括问题覆盖、证据链完整性、引用有效性和格式要求
-- `risk_boundary` — 输出结论时必须说明的限制、不确定性和适用边界
+- Plugins：无
+- MCP：无
+- Skills：`deepresearch-orchestrator`
+- Hooks：无
+- 输入：用户研究需求、用户补充边界、Kanban 任务状态、非编排角色反馈
+- 产出：项目 workspace、`ResearchScheme`、Kanban 任务与依赖关系、重跑任务、用户确认请求
+- 执行规则：研究方案确认前不得启动检索任务；所有人工确认、范围变更和返工原因写入 Kanban 评论或事件；任务拆解必须包含章节编号、负责角色、依赖关系和验收条件
+- `ResearchScheme` 字段：`research_goal`、`key_questions`、`scope`、`assumptions`（可选）、`methodology`、`search_strategy`、`known_sources`、`outline`、`deliverables`、`acceptance_criteria`、`risk_boundary`
 
-## 17.5 数据对象
-- `ResearchRequest`：用户原始研究需求和补充细节
-- `ResearchScheme`：研究方案，包含目标、关键问题、范围与方法、检索策略、来源、章节结构、交付物和验收标准
-- `SearchTask`：可执行检索任务，包含查询词、来源范围、检索目标和预期证据
-- `Source`：可引用来源，包含标题、URL、发布时间、来源类型和摘要
-- `EvidenceChain`：关键判断、事实编号、来源编号和置信度
-- `FactCard`：可复核事实、来源编号、置信度和适用范围
-- `InsightCard`：基于事实形成的判断、支撑事实和适用边界
-- `Recommendation`：基于洞察形成的建议动作、适用条件和风险前提
-- `RiskNote`：证据不足、口径差异、时效性不足、样本偏差和结论边界
-- `ResearchSection`：单章正文、关键发现、证据链、来源、表格、图表和风险说明
-- `ResearchSynthesis`：执行摘要、核心结论、跨章节洞察、建议和全局风险
-- `ResearchResult`：报告渲染前的完整结构化研究结果
-- `DocumentIR`：报告展示中间表示
-- `ReportVersion`：最终报告版本、格式、来源列表和存储地址
+## 17.5 `search-worker`
+`search-worker` 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索。
 
-## 17.6 来源质量标准
-来源审查按可信度、相关性、时效性和偏差风险记录来源质量。
+- Toolsets：`web`、`browser`、`file`
+- Plugins：无
+- MCP：搜索、网页读取、内部知识库、数据库、外部 API
+- Skills：`deepresearch-search`
+- Hooks：无
+- 输入：章节目标、章节证据要求、研究边界、来源策略、已有来源
+- 产出：按章节保存的 `CandidateSource`
+- 执行规则：候选来源必须写入对应章节目录，并记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息；公开网页候选来源必须记录最终 URL；内部知识库候选来源必须记录数据集和片段定位；检索不足时通过 Kanban 评论反馈缺口
 
-| 字段            | 说明                                                                                       |
-| --------------- | ------------------------------------------------------------------------------------------ |
-| `source_type`   | 官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容、内部知识库 |
-| `reliability`   | `high`、`medium`、`low`                                                                    |
-| `recency`       | 发布时间和时效性判断                                                                       |
-| `relevance`     | 与章节问题和关键判断的相关度                                                               |
-| `bias_risk`     | 商业宣传、立场偏向、二手转述、样本不足等风险                                               |
-| `usable_claims` | 可用于支撑报告判断的事实或数据                                                             |
+## 17.6 `source-reviewer`
+`source-reviewer` 负责来源去重、可信度评估、事实抽取、冲突识别和证据链整理。
 
-来源优先级默认按官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容排序。内部知识库不伪装成公开来源。
+- Toolsets：`web`、`file`
+- Plugins：无
+- MCP：网页读取、内部知识库、数据库
+- Skills：`deepresearch-source-review`
+- Hooks：无
+- 输入：`CandidateSource`、章节问题、研究边界、来源策略
+- 产出：按章节保存的 `Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
+- 执行规则：来源、评估、事实、证据链、冲突和风险必须写入对应章节目录；`Source` 必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要；`SourceAssessment` 必须记录可信度、相关性、时效性、偏差风险和可用事实；事实卡片只保存可复核事实，不保存大段原文；冲突事实必须写入 `ConflictNote`
+- 来源优先级：官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容；内部知识库不伪装成公开来源
 
-## 17.7 证据契约
-章节中的关键判断必须满足以下约束：
+## 17.7 `section-writer`
+`section-writer` 负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明。
 
-- 每条关键判断必须写入 `EvidenceChain`。
-- `EvidenceChain.source_ids` 必须能对应到 `Source.source_id`。
-- 公开网页来源必须包含 HTTP URL。
-- 内部知识库来源必须标记 `source_type=internal_knowledge_base`。
-- 事实卡片只能保存可复核事实，不保存大段原文。
-- 口径差异、来源不足、时效性不足和样本偏差必须写入风险说明。
-- 报告渲染阶段不得新增事实、来源、判断或证据链。
+- Plugins：无
+- MCP：无
+- Skills：`deepresearch-section`
+- Hooks：无
+- 输入：章节目标、`Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
+- 产出：`ResearchSection`
+- 执行规则：每条关键判断必须关联 `EvidenceChain`；`EvidenceChain.source_ids` 必须能对应到 `Source.source_id`；章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界；章节正文不得新增无来源事实
 
-## 17.8 质量校验
-章节校验规则：
+## 17.8 `quality-reviewer`
+`quality-reviewer` 负责章节校验、研究结果校验、证据引用检查、占位内容检查和返工建议。
 
-- 章节必须对应已确认大纲节点。
-- 章节正文不能为空，不能包含占位内容。
-- 每章至少包含一条关键发现。
-- 每章至少包含一条证据链。
-- 证据链引用的 `source_id` 必须存在于章节来源或项目来源中。
-- 公开来源必须提供 HTTP URL，内部知识库来源必须标记来源类型。
-- 章节风险说明必须记录证据不足、口径冲突、时效性或适用边界。
+- Plugins：无
+- MCP：无
+- Skills：`deepresearch-quality`
+- Hooks：无
+- 输入：章节校验读取 `ResearchScheme`、`ResearchSection`、章节来源列表和章节证据链；结果校验读取 `ResearchScheme`、全部章节校验结果、`ResearchSynthesis`、`ResearchResult`、全局来源列表和全局证据链
+- 产出：章节 `ValidationResult`、结果 `ValidationResult`
+- 章节校验：章节必须对应已确认大纲节点；章节正文不能为空；每章至少包含一条关键发现和一条证据链；证据链引用的 `source_id` 必须存在；公开来源必须提供 HTTP URL；内部知识库来源必须标记来源类型
+- 结果校验：所有需要正文的章节都已保存；所有章节校验已通过；全局来源列表去重完成；`FactCard`、`InsightCard`、`Recommendation` 和章节风险说明与章节证据链一致；报告渲染输入不包含占位内容
+- 返工规则：校验失败时通过 Kanban 评论记录触发原因、影响章节、待回答问题、建议动作和是否需要用户确认
 
-研究结果校验规则：
+## 17.9 `synthesis-writer`
+`synthesis-writer` 负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，完成全局来源去重，并把所有章节、来源、证据和综合结果组装为 `ResearchResult`。
 
-- 所有需要正文的章节都已保存。
-- 所有章节均通过章节校验。
-- 全局来源列表去重完成。
-- `FactCard`、`InsightCard`、`Recommendation` 和 `RiskNote` 与章节证据链一致。
-- 报告渲染输入不包含占位内容。
+- Plugins：无
+- MCP：无
+- Skills：`deepresearch-synthesis`
+- Hooks：无
+- 输入：全部 `ResearchSection`、`Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
+- 产出：`ResearchSynthesis`、`InsightCard`、`Recommendation`、`ResearchResult`
+- 执行规则：综合结论必须能回溯到章节证据链；建议必须包含适用条件和风险前提；跨章节冲突必须保留冲突说明；全局风险写入 `ResearchSynthesis`；`ResearchResult` 只能组装已存在的章节、来源、证据和综合结果；不得新增无来源事实
 
-## 17.9 重跑和扩展
-章节级重跑触发条件：
+## 17.10 `report-renderer`
+`report-renderer` 负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录。
 
-- 来源不足。
-- 来源冲突严重。
-- 用户补充新来源。
-- 章节结论不符合研究方案。
-- 证据链缺失或引用来源无效。
-- 章节风险边界不完整。
-- 报告渲染正常但指定章节内容需要重写。
-
-非编排 profile 反馈格式：
-
-```json
-{
-  "reason": "来源不足",
-  "affected_section_ids": ["2.1"],
-  "question_to_answer": "是否允许使用英文行业报告？",
-  "suggested_action": "追加检索",
-  "required_user_input": false
-}
-```
-
-## 17.11 Skill 规划
-| Skill                        | 输入                                       | 输出                                            |
-| ---------------------------- | ------------------------------------------ | ----------------------------------------------- |
-| `deepresearch-orchestrator`  | 研究需求、用户补充边界、用户反馈、任务状态 | 研究方案、Kanban 任务图                         |
-| `deepresearch-search`        | 检索问题、来源偏好、约束、已有来源         | 原始搜索结果、网页摘要、知识库片段、候选来源    |
-| `deepresearch-source-review` | 候选来源、原文摘要、知识库片段、检索问题   | `Source`、`EvidenceChain`、`FactCard`、风险说明 |
-| `deepresearch-section`       | 章节节点、证据链、事实卡片、来源、章节要求 | `ResearchSection`                               |
-| `deepresearch-synthesis`     | 所有章节、事实卡片、洞察卡片、风险说明     | `ResearchSynthesis`                             |
-| `deepresearch-quality`       | 章节结果、研究方案、证据链和来源列表       | 校验结果、返工建议和风险补充                    |
-| `deepresearch-report`        | `ResearchResult`、展示要求、输出格式       | `DocumentIR`、`ReportVersion`                   |
-
-## 17.12 MCP 工具
-| 工具                    | 输入                                 | 输出                               |
-| ----------------------- | ------------------------------------ | ---------------------------------- |
-| `search_web`            | 查询词、站点过滤、时间过滤、结果数量 | 公开搜索结果                       |
-| `read_web_page`         | URL、最大字符数                      | 标题、发布时间、正文摘要、最终 URL |
-| `search_internal_kb`    | 查询词、数据集、文档范围、召回参数   | 内部知识库片段                     |
-| `read_uploaded_file`    | 文件编号、页码或范围                 | 文件正文、表格、元数据             |
-| `query_database`        | 数据源、查询参数                     | 结构化数据                         |
-| `save_research_scheme`  | 项目编号、研究方案                   | 保存结果                           |
-| `save_research_section` | 项目编号、章节结果                   | 保存结果和校验错误                 |
-| `save_research_result`  | 项目编号、结构化研究结果             | 保存结果                           |
-| `render_report`         | `DocumentIR`、输出格式               | 报告文件                           |
-| `save_report_version`   | 项目编号、报告元数据、报告文件       | 报告版本                           |
+- Toolsets：`file`
+- Plugins：无
+- MCP：无
+- Skills：`deepresearch-report`
+- Hooks：无
+- 输入：`ResearchResult`、结果 `ValidationResult`
+- 产出：HTML 报告、`ReportVersion`
+- 执行规则：结果校验通过后才能渲染；报告渲染阶段不得新增事实、来源、判断或证据链；报告必须包含执行摘要、正文、表格或图表、来源列表、风险说明和版本信息；`ReportVersion` 必须记录报告格式、来源列表、生成时间和存储地址

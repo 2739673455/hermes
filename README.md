@@ -2097,23 +2097,21 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 ## 17.4 研究方案
 研究方案用于固化执行边界，用户确认后作为任务拆解、检索、写作和验收依据。
 
-| 字段                  | 说明                                      |
-| --------------------- | ----------------------------------------- |
-| `research_goal`       | 研究目标和最终需要回答的问题              |
-| `scope`               | 研究范围                                  |
-| `excluded_scope`      | 明确不研究的范围                          |
-| `key_questions`       | 必须回答的关键问题                        |
-| `assumptions`         | 默认假设                                  |
-| `search_strategy`     | 检索策略、关键词方向和来源优先级          |
-| `source_requirements` | 来源类型、可信度、时效性和覆盖要求        |
-| `outline`             | 章节结构、章节问题和章节证据需求          |
-| `deliverables`        | HTML 报告、表格、图表、执行摘要等交付内容 |
-| `acceptance_criteria` | 验收标准                                  |
-| `risk_boundary`       | 已知限制、不确定性和需谨慎表达的结论边界  |
+- `research_goal` — 研究目标和最终需要回答的问题
+- `key_questions` — 必须回答的关键问题
+- `scope` — 研究边界与约束，包括研究范围、排除项和口径限制
+- `assumptions` — （可选）执行研究时默认采用的前提假设
+- `methodology` — （可选）分析方法，如 SWOT、PEST、对比分析、案例研究、定量分析等
+- `search_strategy` — 检索方法与来源筛选标准，包括检索方向、搜索范围、来源类型优先级、可信度与时效性要求
+- `known_sources` — （可选）已知要查阅的具体数据库、文档、平台或内部知识库清单
+- `outline` — 章节结构、章节目标和章节证据要求
+- `deliverables` — 最终交付内容，包括 HTML 报告、执行摘要、表格、图表和数据附录
+- `acceptance_criteria` — 验收标准，包括问题覆盖、证据链完整性、引用有效性和格式要求
+- `risk_boundary` — 输出结论时必须说明的限制、不确定性和适用边界
 
 ## 17.5 数据对象
 - `ResearchRequest`：用户原始研究需求和补充细节
-- `ResearchScheme`：规定研究目标、范围、排除项、关键问题、默认假设、交付标准、研究方法、检索策略、来源偏好、报告结构、章节问题、证据需求、章节任务和验收规则
+- `ResearchScheme`：研究方案，包含目标、关键问题、范围与方法、检索策略、来源、章节结构、交付物和验收标准
 - `SearchTask`：可执行检索任务，包含查询词、来源范围、检索目标和预期证据
 - `Source`：可引用来源，包含标题、URL、发布时间、来源类型和摘要
 - `EvidenceChain`：关键判断、事实编号、来源编号和置信度

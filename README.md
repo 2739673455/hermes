@@ -2097,10 +2097,44 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - MCP：无
 - Skills：`deepresearch-orchestrator`
 - Hooks：无
-- 输入：用户研究需求、用户补充边界、Kanban 任务状态、非编排角色反馈
-- 产出：项目 workspace、`ResearchScheme`、Kanban 任务与依赖关系、重跑任务、用户确认请求
-- 执行规则：研究方案确认前不得启动检索任务；所有人工确认、范围变更和返工原因写入 Kanban 评论或事件；任务拆解必须包含章节编号、负责角色、依赖关系和验收条件
-- `ResearchScheme` 字段：`research_goal`、`key_questions`、`scope`、`assumptions`（可选）、`methodology`、`search_strategy`、`known_sources`、`outline`、`deliverables`、`acceptance_criteria`、`risk_boundary`
+
+需求确认阶段：
+
+- 输入：用户研究需求、已有上下文、用户补充边界
+- 产出：已确认的研究目标、必要边界、无需限定的边界
+- 执行规则：只确认会影响研究方案的边界；用户明确不限定的边界不得反复追问
+
+方案确认阶段：
+
+- 输入：已确认的研究目标和边界
+- 产出：项目 workspace、`ResearchScheme`、用户确认记录
+- 执行规则：研究方案确认前不得启动搜索与证据整理任务；人工确认和范围变更写入 Kanban 评论或事件
+
+任务编排阶段：
+
+- 输入：已确认的 `ResearchScheme`、Kanban 任务状态、章节校验结果、结果校验结果
+- 产出：搜索与证据整理任务、章节写作任务、质量校验任务、综合任务、报告渲染任务及依赖关系
+- 执行规则：任务拆解必须包含章节编号、负责角色、输入路径、输出路径、依赖关系和验收条件
+
+返工协调阶段：
+
+- 输入：非编排角色反馈、校验失败结果、用户补充信息
+- 产出：重跑任务、用户确认请求、阻塞说明
+- 执行规则：需要用户判断时阻塞相关任务；不需要用户判断时，只创建能修复当前失败点的返工任务
+
+`ResearchScheme` 字段：
+
+- `research_goal`：研究目标和最终需要回答的问题
+- `key_questions`：必须回答的关键问题
+- `scope`：研究边界与约束，包括研究范围、排除项和口径限制
+- `assumptions`：可选，执行研究时默认采用的前提假设
+- `methodology`：可选，分析方法，如 SWOT、PEST、对比分析、案例研究、定量分析等
+- `search_strategy`：检索方法与来源筛选标准，包括检索方向、搜索范围、来源类型优先级、可信度与时效性要求
+- `known_sources`：已知要查阅的具体数据库、文档、平台或内部知识库清单
+- `outline`：章节结构、章节目标和章节证据要求
+- `deliverables`：最终交付内容，包括 HTML 报告、执行摘要、表格、图表和数据附录
+- `acceptance_criteria`：验收标准，包括问题覆盖、证据链完整性、引用有效性和格式要求
+- `risk_boundary`：输出结论时必须说明的限制、不确定性和适用边界
 
 ## 17.5 `search-worker`
 `search-worker` 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，并完成来源评估、事实抽取、冲突识别和证据链整理。

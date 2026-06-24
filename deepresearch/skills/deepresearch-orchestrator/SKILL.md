@@ -73,7 +73,7 @@ deepresearch/<project_id>/
 - `key_questions`：必须回答的关键问题
 - `scope`：研究边界与约束，包括研究范围、排除项和口径限制
 - `assumptions`：可选，执行研究时默认采用的前提假设
-- `methodology`：分析方法，如 SWOT、PEST、对比分析、案例研究、定量分析等
+- `methodology`：可选，分析方法，如 SWOT、PEST、对比分析、案例研究、定量分析等
 - `search_strategy`：检索方法与来源筛选标准，包括检索方向、搜索范围、来源类型优先级、可信度与时效性要求
 - `known_sources`：已知要查阅的具体数据库、文档、平台或内部知识库清单
 - `outline`：章节结构、章节目标和章节证据要求

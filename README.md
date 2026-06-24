@@ -1998,14 +1998,16 @@ auxiliary:
     model: ""
 ```
 
-创建 `orchestrator` profile，并把它配置为自动拆解后 root task 的默认 assignee：
+创建 `orchestrator` profile，为其启用 `kanban` 工具，并把它配置为编排器：
 
 ```bash
+# 创建 orchestrator profile
 hermes profile create orchestrator --clone
-
-orchestrator tools disable terminal file web browser code_execution
-
+# 启用 kanban 工具
+orchestrator config set toolsets '["hermes-cli", "kanban"]'
+# 配置为 Kanban 编排器
 hermes config set kanban.orchestrator_profile orchestrator
+# 启用自动拆解
 hermes config set kanban.auto_decompose true
 ```
 
@@ -2064,18 +2066,18 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
   v
 任务：拆解研究任务
   |
-  +------------------------------+
-  |                              |
-  v                              v
-任务：搜索并整理章节 1 信息     任务：搜索并整理章节 2 信息
-  |                              |
-  v                              v
-任务：写作章节 1              任务：写作章节 2
-  |                              |
-  v                              v
-任务：校验章节 1              任务：校验章节 2
-  |                              |
-  +------------------------------+
+  +---------------------------+
+  |                           |
+  v                           v
+任务：搜索并整理章节 1 信息    任务：搜索并整理章节 2 信息
+  |                           |
+  v                           v
+任务：写作章节 1             任务：写作章节 2
+  |                           |
+  v                           v
+任务：校验章节 1             任务：校验章节 2
+  |                           |
+  +---------------------------+
   |
   v
 任务：综合研究结果并组装 ResearchResult
@@ -2085,11 +2087,19 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
   |
   v
 任务：渲染报告
-  |
-  +--> 可选：请求编排器调整
 ```
 
-## 17.4 `research-orchestrator`
+任务拆解完成后，各执行 profile 可随时向 `research-orchestrator` 反馈问题，触发追加搜索、章节修订、结果重组、报告重渲染或用户确认任务。
+
+## 17.4 workspace 目录
+- `project.json`：项目编号、workspace 路径、根任务编号、当前研究业务阶段
+- `scheme.json`：用户确认后的 `ResearchScheme`
+- `sections/<section_id>/`：章节来源、事实、证据链、冲突、风险、正文和章节校验结果
+- `synthesis/`：跨章节综合、洞察和建议
+- `result/`：`ResearchResult` 和结果校验结果
+- `reports/`：HTML 报告和报告版本记录
+
+## 17.5 `research-orchestrator`
 `research-orchestrator` 负责研究项目的入口、边界确认、方案生成、任务拆解、进度协调和返工调度。
 
 - Toolsets：`file`
@@ -2098,17 +2108,11 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - Skills：`deepresearch-orchestrator`
 - Hooks：无
 
-需求确认阶段：
+研究准备阶段：
 
 - 输入：用户研究需求、已有上下文、用户补充边界
-- 产出：已确认的研究目标、必要边界、无需限定的边界
-- 执行规则：只确认会影响研究方案的边界；用户明确不限定的边界不得反复追问
-
-方案确认阶段：
-
-- 输入：已确认的研究目标和边界
-- 产出：项目 workspace、`ResearchScheme`、用户确认记录
-- 执行规则：研究方案确认前不得启动搜索与证据整理任务；人工确认和范围变更写入 Kanban 评论或事件
+- 产出：项目 workspace、已确认的 `ResearchScheme`、用户确认记录
+- 执行规则：只确认会影响研究方案的边界；用户明确不限定的边界不得反复追问；研究方案确认前不得启动搜索与证据整理任务；人工确认和范围变更写入 Kanban 评论或事件
 
 任务编排阶段：
 
@@ -2121,6 +2125,32 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 输入：非编排角色反馈、校验失败结果、用户补充信息
 - 产出：重跑任务、用户确认请求、阻塞说明
 - 执行规则：需要用户判断时阻塞相关任务；不需要用户判断时，只创建能修复当前失败点的返工任务
+
+交付完成阶段：
+
+- 输入：`ResearchResult`、结果 `ValidationResult`、`ReportVersion`、未解决阻塞
+- 产出：根任务完成摘要、报告路径、版本记录路径、剩余风险
+- 执行规则：结果校验未通过、报告未生成、版本记录缺失或存在未解决阻塞时，不得完成根任务
+
+子任务契约：
+
+- `project_id`：研究项目编号
+- `section_id`：章节编号，仅章节任务需要
+- `workspace_path`：项目 workspace 路径
+- `assignee`：负责执行的 profile
+- `inputs`：输入文件或目录
+- `outputs`：输出文件或目录
+- `objective`：任务目标
+- `constraints`：执行约束
+- `acceptance_criteria`：验收条件
+
+反馈格式：
+
+- `reason`：触发原因
+- `affected_section_ids`：影响章节
+- `question_to_answer`：待回答问题
+- `suggested_action`：建议动作
+- `required_user_input`：是否需要用户确认
 
 `ResearchScheme` 字段：
 
@@ -2136,7 +2166,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - `acceptance_criteria`：验收标准，包括问题覆盖、证据链完整性、引用有效性和格式要求
 - `risk_boundary`：输出结论时必须说明的限制、不确定性和适用边界
 
-## 17.5 `search-worker`
+## 17.6 `search-worker`
 `search-worker` 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，并完成来源评估、事实抽取、冲突识别和证据链整理。
 
 - Toolsets：`web`、`browser`、`file`
@@ -2150,7 +2180,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 内部阶段：读取 `ResearchScheme.outline` 中对应章节；生成章节搜索计划；执行检索和网页读取；评估来源并抽取事实；整理证据链、冲突和风险；必要时反馈证据缺口
 - 执行规则：章节目标和证据要求通过 `section_id` 从 `ResearchScheme.outline` 读取；搜索计划必须遵守 `ResearchScheme.scope`、`ResearchScheme.search_strategy`、`ResearchScheme.known_sources` 和章节证据要求；候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息；公开网页候选来源必须记录最终 URL；内部知识库候选来源必须记录数据集和片段定位；`Source` 必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要；`SourceAssessment` 必须记录可信度、相关性、时效性、偏差风险和可用事实；事实卡片只保存可复核事实，不保存大段原文；冲突事实必须写入 `ConflictNote`；不得用低可信来源填补关键证据缺口；检索或证据不足时通过 Kanban 评论反馈缺口
 
-## 17.6 `section-writer`
+## 17.7 `section-writer`
 `section-writer` 负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明。
 
 - Toolsets：`file`
@@ -2163,7 +2193,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 内部阶段：读取 `ResearchScheme.outline` 中对应章节；整理章节写作要点和关键发现候选；写作章节正文、表格、图表说明和章节风险说明；保存 `section.json`
 - 执行规则：写作要点必须对应已确认大纲节点；不得把未验证信息列为关键发现；每条关键判断必须关联 `EvidenceChain`；`EvidenceChain.source_ids` 必须能对应到 `Source.source_id`；章节正文不得新增无来源事实；章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界；未完成内容不得进入 `section.json`
 
-## 17.7 `quality-reviewer`
+## 17.8 `quality-reviewer`
 `quality-reviewer` 负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议。
 
 - Toolsets：`file`
@@ -2186,7 +2216,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 内部阶段：检查所有章节校验是否通过；检查全局来源列表是否去重；检查 `FactCard`、`InsightCard`、`Recommendation` 和章节风险说明是否与章节证据链一致；检查报告渲染输入是否存在未完成内容或占位符；生成校验结果和返工反馈
 - 执行规则：所有需要正文的章节都已保存；所有章节校验已通过；报告渲染输入不包含未完成内容或占位符；校验失败时通过 Kanban 评论记录返工反馈；返工反馈必须能指向具体失败点
 
-## 17.8 `synthesis-writer`
+## 17.9 `synthesis-writer`
 `synthesis-writer` 负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，完成全局来源去重，并把所有章节、来源、证据和综合结果组装为 `ResearchResult`。
 
 - Toolsets：`file`
@@ -2199,7 +2229,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 内部阶段：构建跨章节事实索引、冲突清单和风险清单；生成执行摘要、核心结论、跨章节洞察和建议；完成全局来源去重；组装 `ResearchResult`
 - 执行规则：只使用已保存的章节、来源、事实和证据链；综合结论必须能回溯到章节证据链；建议必须包含适用条件和风险前提；跨章节冲突必须保留冲突说明；全局风险写入 `ResearchSynthesis`；`ResearchResult` 只能组装已存在的章节、来源、证据和综合结果；全局来源列表必须去重；不得新增事实、来源、判断或证据链
 
-## 17.9 `report-renderer`
+## 17.10 `report-renderer`
 `report-renderer` 负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录。
 
 - Toolsets：`file`

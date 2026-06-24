@@ -88,7 +88,7 @@ deepresearch/<project_id>/
 4. 用户明确边界或明确不限定后，生成 `scheme.json` 草案。
 5. 请求用户确认研究方案；确认前不得创建检索、审查、写作或渲染任务。
 6. 用户确认后，将 `project.json.phase` 更新为 `researching`。
-7. 按 `scheme.json.outline` 创建章节任务链。
+7. 按 `ResearchScheme.outline` 创建章节任务链。
 8. 所有章节校验通过后，创建综合、结果校验和报告渲染任务。
 9. 读取所有 worker 结果并判断根任务是否满足完成条件。
 10. 满足完成条件后完成根任务。
@@ -147,10 +147,10 @@ Outputs:
 - risk_notes: <workspace_path>/sections/<section_id>/risk_notes.jsonl
 
 Objective:
-<章节目标>
+<ResearchScheme.outline 中对应章节的目标>
 
 Constraints:
-<研究边界、来源范围、时效性要求>
+<ResearchScheme.scope、ResearchScheme.search_strategy、ResearchScheme.outline 中对应章节的证据要求>
 
 Acceptance criteria:
 - 候选来源包含检索渠道、标题、URL 或文档编号、摘要片段和召回信息

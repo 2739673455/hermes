@@ -13,7 +13,7 @@ metadata:
 
 ## Runtime Contract
 - 启动后先调用 `kanban_show()` 读取根任务标题、正文、父任务交接、历史运行记录和评论串
-- 在 `$HERMES_KANBAN_WORKSPACE` 下创建和维护项目文件；如果该环境变量不存在，使用当前工作目录
+- root task 使用 `dir:<path>` workspace 时，把 `$HERMES_KANBAN_WORKSPACE` 作为 DeepResearch 项目总目录；未指定 `dir:<path>` 时，使用 `$HOME/.hermes/workspaces/deepresearch`
 - 用 Kanban 保存任务状态、依赖关系、评论、人工确认、阻塞原因、重试记录和 worker 交接
 - 用文件系统保存研究业务产物
 - 定期调用 `kanban_heartbeat(note="...")` 写入进度
@@ -21,33 +21,27 @@ metadata:
 - 根任务完成时调用 `kanban_complete(summary="...", metadata={...})`
 
 ## Workspace Layout
-每个研究项目创建一个独立目录，目录名使用 `deepresearch/<project_id>/`。
+每个研究项目创建一个独立 workspace，目录名使用 `<deepresearch_workspace>/<project_id>/`。
 
 ```text
-deepresearch/<project_id>/
+<deepresearch_workspace>/<project_id>/
   project.json
   scheme.json
   sections/
     <section_id>/
-      candidate_sources.jsonl
-      sources.jsonl
-      source_assessments.jsonl
-      fact_cards.jsonl
-      evidence_chains.jsonl
-      conflict_notes.jsonl
-      risk_notes.jsonl
+      research.json
       section.json
       validation.json
   synthesis/
     synthesis.json
-    insights.jsonl
-    recommendations.jsonl
   result/
     research_result.json
     validation.json
   reports/
-    report.html
-    report_version.json
+    index.json
+    current.html
+    v001.html
+    v002.html
 ```
 
 ## Project Manifest
@@ -56,7 +50,7 @@ deepresearch/<project_id>/
 ```json
 {
   "project_id": "dr-20260624-153000-topic",
-  "workspace_path": "deepresearch/dr-20260624-153000-topic",
+  "workspace_path": "$HOME/.hermes/workspaces/deepresearch/dr-20260624-153000-topic",
   "root_task_id": "<kanban_task_id>",
   "phase": "planning",
   "created_at": "<iso8601>",
@@ -124,7 +118,7 @@ synthesis-writer
 - `acceptance_criteria`
 
 ## Search Task
-`search-worker` 任务输出候选来源、可引用来源、来源评估和事实证据。
+`search-worker` 任务输出章节研究包。
 
 ```text
 Title: 搜索并整理章节证据 <section_id>：<section_title>
@@ -138,13 +132,7 @@ Inputs:
 - scheme: <workspace_path>/scheme.json
 
 Outputs:
-- candidate_sources: <workspace_path>/sections/<section_id>/candidate_sources.jsonl
-- sources: <workspace_path>/sections/<section_id>/sources.jsonl
-- source_assessments: <workspace_path>/sections/<section_id>/source_assessments.jsonl
-- fact_cards: <workspace_path>/sections/<section_id>/fact_cards.jsonl
-- evidence_chains: <workspace_path>/sections/<section_id>/evidence_chains.jsonl
-- conflict_notes: <workspace_path>/sections/<section_id>/conflict_notes.jsonl
-- risk_notes: <workspace_path>/sections/<section_id>/risk_notes.jsonl
+- research: <workspace_path>/sections/<section_id>/research.json
 
 Objective:
 <ResearchScheme.outline 中对应章节的目标>
@@ -176,12 +164,7 @@ workspace_path: <workspace_path>
 
 Inputs:
 - scheme: <workspace_path>/scheme.json
-- sources: <workspace_path>/sections/<section_id>/sources.jsonl
-- source_assessments: <workspace_path>/sections/<section_id>/source_assessments.jsonl
-- fact_cards: <workspace_path>/sections/<section_id>/fact_cards.jsonl
-- evidence_chains: <workspace_path>/sections/<section_id>/evidence_chains.jsonl
-- conflict_notes: <workspace_path>/sections/<section_id>/conflict_notes.jsonl
-- risk_notes: <workspace_path>/sections/<section_id>/risk_notes.jsonl
+- research: <workspace_path>/sections/<section_id>/research.json
 
 Outputs:
 - section: <workspace_path>/sections/<section_id>/section.json
@@ -206,9 +189,8 @@ workspace_path: <workspace_path>
 
 Inputs:
 - scheme: <workspace_path>/scheme.json
+- research: <workspace_path>/sections/<section_id>/research.json
 - section: <workspace_path>/sections/<section_id>/section.json
-- sources: <workspace_path>/sections/<section_id>/sources.jsonl
-- evidence_chains: <workspace_path>/sections/<section_id>/evidence_chains.jsonl
 
 Outputs:
 - validation: <workspace_path>/sections/<section_id>/validation.json
@@ -236,8 +218,6 @@ Inputs:
 
 Outputs:
 - synthesis: <workspace_path>/synthesis/synthesis.json
-- insights: <workspace_path>/synthesis/insights.jsonl
-- recommendations: <workspace_path>/synthesis/recommendations.jsonl
 - research_result: <workspace_path>/result/research_result.json
 
 Acceptance criteria:
@@ -289,8 +269,9 @@ Inputs:
 - validation: <workspace_path>/result/validation.json
 
 Outputs:
-- report: <workspace_path>/reports/report.html
-- report_version: <workspace_path>/reports/report_version.json
+- report_index: <workspace_path>/reports/index.json
+- current_report: <workspace_path>/reports/current.html
+- versioned_report: <workspace_path>/reports/<version>.html
 
 Acceptance criteria:
 - 报告基于 `ResearchResult` 确定性生成
@@ -316,13 +297,15 @@ worker 反馈必须包含：
 满足以下条件后完成根任务。
 
 - `scheme.json` 已存在并经过用户确认
+- 所有必需章节都有 `research.json`
 - 所有必需章节都有 `section.json`
 - 所有必需章节都有通过状态的 `validation.json`
 - `synthesis/synthesis.json` 已存在
 - `result/research_result.json` 已存在
 - `result/validation.json` 已存在并通过
-- `reports/report.html` 已存在
-- `reports/report_version.json` 已存在
+- `reports/index.json` 已存在
+- `reports/current.html` 已存在
+- `reports/<version>.html` 已存在
 - 没有未解决阻塞
 
 ## Pitfalls

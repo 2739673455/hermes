@@ -1577,7 +1577,7 @@ Cron 表达式格式为 `分 时 日 月 周`，例如：
 | ------------------------------ | -------------------------------------- |
 | `origin`                       | 回到创建任务的聊天来源，消息平台默认值 |
 | `local`                        | 只保存到本地文件，CLI 默认值           |
-| `telegram`、`discord`、`slack` | 投递到对应平台的 home channel          |
+| `telegram`, `discord`, `slack` | 投递到对应平台的 home channel          |
 | `telegram:123456`              | 投递到指定 Telegram chat ID            |
 | `discord:#engineering`         | 投递到指定 Discord 频道                |
 | `all`                          | 投递到所有已配置 home channel 的平台   |
@@ -2028,17 +2028,17 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 # 17. 案例：深度研究
 ## 17.1 功能
 - 多源：支持公开网页、指定来源、上传文件、内部知识库、数据库和外部 API
-- 追溯：每个关键判断通过证据链关联来源和事实卡片
+- 追溯：每个关键判断通过证据链关联来源和事实
 - 重跑：每个章节独立检索、写作和保存，可单章重跑
-- 交付：基于结构化研究结果确定性生成 HTML
+- 交付：基于结构化研究结果生成 HTML
 
 ## 17.2 角色规划
 - `research-orchestrator`：接收需求、确认研究边界、生成研究方案、拆分任务、协调返工、汇总
 - `search-worker`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
 - `section-writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
 - `quality-reviewer`：章节校验、结果校验、证据引用检查、未完成内容检查和返工建议
-- `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源去重并组装 `ResearchResult`
-- `report-renderer`：基于 `ResearchResult` 确定性生成 HTML
+- `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源去重并组装结构化研究结果
+- `report-renderer`：基于结构化研究结果生成 HTML
 
 ## 17.3 流程与任务图
 1. `research-orchestrator` 接收研究需求。
@@ -2089,20 +2089,42 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 任务：渲染报告
 ```
 
-任务拆解完成后，各执行 profile 可随时向 `research-orchestrator` 反馈问题，触发追加搜索、章节修订、结果重组、报告重渲染或用户确认任务。
+任务拆解以后的步骤中，各执行 profile 可随时向 `research-orchestrator` 反馈问题，触发追加搜索、章节修订、结果重组、报告重渲染或用户确认任务。
 
 ## 17.4 workspace 目录
-- `project.json`：项目编号、workspace 路径、根任务编号、当前研究业务阶段
-- `scheme.json`：用户确认后的 `ResearchScheme`
-- `sections/<section_id>/`：章节来源、事实、证据链、冲突、风险、正文和章节校验结果
-- `synthesis/`：跨章节综合、洞察和建议
-- `result/`：`ResearchResult` 和结果校验结果
-- `reports/`：HTML 报告和报告版本记录
+使用固定的项目总目录 `$HOME/.hermes/workspaces/deepresearch`。
+
+创建 root task 时可以通过 `--workspace dir:<path>` 指定项目总目录；未指定 `dir:<path>` 时使用 `$HOME/.hermes/workspaces/deepresearch`。
+
+每个研究项目在项目总目录下创建目录 `<deepresearch_workspace>/<project_id>/`，`project_id` 使用 `dr-YYYYMMDD-HHMMSS-<slug>` 格式。`slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符。
+
+workspace 结构：
+
+```text
+<deepresearch_workspace>/<project_id>/
+  project.json                  # 项目编号、根任务编号、workspace 路径、当前研究业务阶段和当前报告版本
+  scheme.json                   # 研究方案
+  sections/
+    <section_id>/
+      research.json             # 章节来源、来源评估、事实、证据链、冲突和风险
+      section.json              # 章节正文、关键发现、表格、图表说明和章节风险
+      validation.json           # 章节校验结果
+  synthesis/
+    synthesis.json              # 执行摘要、核心结论、跨章节洞察、建议和全局风险
+  result/
+    research_result.json        # 报告渲染前的完整结构化研究结果
+    validation.json             # ResearchResult 校验结果
+  reports/
+    index.json                  # 报告版本索引、当前版本编号和版本说明
+    current.html                # 当前 HTML 报告
+    v001.html                   # 第 1 版 HTML 报告
+    v002.html                   # 第 2 版 HTML 报告
+```
 
 ## 17.5 `research-orchestrator`
 `research-orchestrator` 负责研究项目的入口、边界确认、方案生成、任务拆解、进度协调和返工调度。
 
-- Toolsets：`file`
+- Toolsets：`file`,`kanban`
 - Plugins：无
 - MCP：无
 - Skills：`deepresearch-orchestrator`
@@ -2111,7 +2133,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 研究准备阶段：
 
 - 输入：用户研究需求、已有上下文、用户补充边界
-- 产出：项目 workspace、已确认的 `ResearchScheme`、用户确认记录
+- 产出：项目 workspace、已确认的 `ResearchScheme`
 - 执行规则：只确认会影响研究方案的边界；用户明确不限定的边界不得反复追问；研究方案确认前不得启动搜索与证据整理任务；人工确认和范围变更写入 Kanban 评论或事件
 
 任务编排阶段：
@@ -2176,9 +2198,9 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - Hooks：无
 - 来源优先级：官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容；内部知识库不伪装成公开来源
 - 任务输入：`ResearchScheme`、`section_id`、`workspace_path`
-- 任务产出：按章节保存的 `CandidateSource`、`Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
+- 任务产出：保存到章节目录的 `research.json`
 - 内部阶段：读取 `ResearchScheme.outline` 中对应章节；生成章节搜索计划；执行检索和网页读取；评估来源并抽取事实；整理证据链、冲突和风险；必要时反馈证据缺口
-- 执行规则：章节目标和证据要求通过 `section_id` 从 `ResearchScheme.outline` 读取；搜索计划必须遵守 `ResearchScheme.scope`、`ResearchScheme.search_strategy`、`ResearchScheme.known_sources` 和章节证据要求；候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息；公开网页候选来源必须记录最终 URL；内部知识库候选来源必须记录数据集和片段定位；`Source` 必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要；`SourceAssessment` 必须记录可信度、相关性、时效性、偏差风险和可用事实；事实卡片只保存可复核事实，不保存大段原文；冲突事实必须写入 `ConflictNote`；不得用低可信来源填补关键证据缺口；检索或证据不足时通过 Kanban 评论反馈缺口
+- 执行规则：章节目标和证据要求通过 `section_id` 从 `ResearchScheme.outline` 读取；搜索计划必须遵守 `ResearchScheme.scope`、`ResearchScheme.search_strategy`、`ResearchScheme.known_sources` 和章节证据要求；`research.json` 包含候选来源、可引用来源、来源评估、事实卡片、证据链、冲突信息和风险说明；候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息；公开网页候选来源必须记录最终 URL；内部知识库候选来源必须记录数据集和片段定位；可引用来源必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要；来源评估必须记录可信度、相关性、时效性、偏差风险和可用事实；事实卡片只保存可复核事实，不保存大段原文；不得用低可信来源填补关键证据缺口；检索或证据不足时通过 Kanban 评论反馈缺口
 
 ## 17.7 `section-writer`
 `section-writer` 负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明。
@@ -2188,7 +2210,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - MCP：无
 - Skills：`deepresearch-section`
 - Hooks：无
-- 任务输入：`ResearchScheme`、`section_id`、`workspace_path`、当前章节的 `Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
+- 任务输入：`ResearchScheme`、`section_id`、`workspace_path`、当前章节的 `research.json`
 - 任务产出：`ResearchSection`、保存到章节目录的 `section.json`
 - 内部阶段：读取 `ResearchScheme.outline` 中对应章节；整理章节写作要点和关键发现候选；写作章节正文、表格、图表说明和章节风险说明；保存 `section.json`
 - 执行规则：写作要点必须对应已确认大纲节点；不得把未验证信息列为关键发现；每条关键判断必须关联 `EvidenceChain`；`EvidenceChain.source_ids` 必须能对应到 `Source.source_id`；章节正文不得新增无来源事实；章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界；未完成内容不得进入 `section.json`
@@ -2204,7 +2226,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 
 章节校验任务：
 
-- 任务输入：`ResearchScheme`、`section_id`、`workspace_path`、`ResearchSection`、章节来源列表、章节证据链
+- 任务输入：`ResearchScheme`、`section_id`、`workspace_path`、当前章节的 `research.json`、`ResearchSection`
 - 任务产出：章节 `ValidationResult`、保存到章节目录的 `validation.json`
 - 内部阶段：检查章节是否对应已确认大纲节点；检查正文、关键发现和证据链完整性；检查 `source_id`、公开来源 URL 和内部知识库来源类型；生成校验结果和返工反馈
 - 执行规则：章节正文不能为空；每章至少包含一条关键发现和一条证据链；证据链引用的 `source_id` 必须存在；公开来源必须提供 HTTP URL；内部知识库来源必须标记来源类型；校验失败时通过 Kanban 评论记录触发原因、影响章节、待回答问题、建议动作和是否需要用户确认
@@ -2213,7 +2235,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 
 - 任务输入：`ResearchScheme`、`workspace_path`、全部章节校验结果、`ResearchSynthesis`、`ResearchResult`、全局来源列表、全局证据链
 - 任务产出：结果 `ValidationResult`、保存到结果目录的 `validation.json`
-- 内部阶段：检查所有章节校验是否通过；检查全局来源列表是否去重；检查 `FactCard`、`InsightCard`、`Recommendation` 和章节风险说明是否与章节证据链一致；检查报告渲染输入是否存在未完成内容或占位符；生成校验结果和返工反馈
+- 内部阶段：检查所有章节校验是否通过；检查全局来源列表是否去重；检查事实、洞察、建议和章节风险说明是否与章节证据链一致；检查报告渲染输入是否存在未完成内容或占位符；生成校验结果和返工反馈
 - 执行规则：所有需要正文的章节都已保存；所有章节校验已通过；报告渲染输入不包含未完成内容或占位符；校验失败时通过 Kanban 评论记录返工反馈；返工反馈必须能指向具体失败点
 
 ## 17.9 `synthesis-writer`
@@ -2224,8 +2246,8 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - MCP：无
 - Skills：`deepresearch-synthesis`
 - Hooks：无
-- 任务输入：`ResearchScheme`、`workspace_path`、全部 `ResearchSection`、`Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
-- 任务产出：`ResearchSynthesis`、`InsightCard`、`Recommendation`、`ResearchResult`
+- 任务输入：`ResearchScheme`、`workspace_path`、全部章节的 `research.json`、`ResearchSection` 和章节校验结果
+- 任务产出：`ResearchSynthesis`、`ResearchResult`
 - 内部阶段：构建跨章节事实索引、冲突清单和风险清单；生成执行摘要、核心结论、跨章节洞察和建议；完成全局来源去重；组装 `ResearchResult`
 - 执行规则：只使用已保存的章节、来源、事实和证据链；综合结论必须能回溯到章节证据链；建议必须包含适用条件和风险前提；跨章节冲突必须保留冲突说明；全局风险写入 `ResearchSynthesis`；`ResearchResult` 只能组装已存在的章节、来源、证据和综合结果；全局来源列表必须去重；不得新增事实、来源、判断或证据链
 

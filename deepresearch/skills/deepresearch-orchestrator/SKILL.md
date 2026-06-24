@@ -98,7 +98,6 @@ deepresearch/<project_id>/
 
 ```text
 search-worker
-  -> source-reviewer
   -> section-writer
   -> quality-reviewer
 ```
@@ -125,10 +124,10 @@ synthesis-writer
 - `acceptance_criteria`
 
 ## Search Task
-`search-worker` 任务输出候选来源。
+`search-worker` 任务输出候选来源、可引用来源、来源评估和事实证据。
 
 ```text
-Title: 检索章节 <section_id>：<section_title>
+Title: 搜索并整理章节证据 <section_id>：<section_title>
 Assignee: search-worker
 
 project_id: <project_id>
@@ -140,6 +139,12 @@ Inputs:
 
 Outputs:
 - candidate_sources: <workspace_path>/sections/<section_id>/candidate_sources.jsonl
+- sources: <workspace_path>/sections/<section_id>/sources.jsonl
+- source_assessments: <workspace_path>/sections/<section_id>/source_assessments.jsonl
+- fact_cards: <workspace_path>/sections/<section_id>/fact_cards.jsonl
+- evidence_chains: <workspace_path>/sections/<section_id>/evidence_chains.jsonl
+- conflict_notes: <workspace_path>/sections/<section_id>/conflict_notes.jsonl
+- risk_notes: <workspace_path>/sections/<section_id>/risk_notes.jsonl
 
 Objective:
 <章节目标>
@@ -151,33 +156,6 @@ Acceptance criteria:
 - 候选来源包含检索渠道、标题、URL 或文档编号、摘要片段和召回信息
 - 公开网页候选来源包含最终 URL
 - 内部知识库候选来源包含数据集和片段定位
-- 候选来源只写入当前章节目录
-```
-
-## Source Review Task
-`source-reviewer` 任务输出可引用来源、来源评估和事实证据。
-
-```text
-Title: 审查来源 <section_id>：<section_title>
-Assignee: source-reviewer
-
-project_id: <project_id>
-section_id: <section_id>
-workspace_path: <workspace_path>
-
-Inputs:
-- scheme: <workspace_path>/scheme.json
-- candidate_sources: <workspace_path>/sections/<section_id>/candidate_sources.jsonl
-
-Outputs:
-- sources: <workspace_path>/sections/<section_id>/sources.jsonl
-- source_assessments: <workspace_path>/sections/<section_id>/source_assessments.jsonl
-- fact_cards: <workspace_path>/sections/<section_id>/fact_cards.jsonl
-- evidence_chains: <workspace_path>/sections/<section_id>/evidence_chains.jsonl
-- conflict_notes: <workspace_path>/sections/<section_id>/conflict_notes.jsonl
-- risk_notes: <workspace_path>/sections/<section_id>/risk_notes.jsonl
-
-Acceptance criteria:
 - 每个可引用来源都有项目内唯一的 `source_id`
 - 每个 `Source` 都关联 `SourceAssessment`
 - 事实卡片只保存可复核事实

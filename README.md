@@ -2033,8 +2033,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 
 ## 17.2 角色规划
 - `research-orchestrator`：理解需求、澄清细节、生成研究方案、拆分任务、即时调整、汇总
-- `search-worker`：执行公开搜索、指定站点搜索、网页读取、文件检索
-- `source-reviewer`：来源去重、可信度评估、冲突识别、证据链整理和风险记录
+- `search-worker`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
 - `section-writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
 - `quality-reviewer`：章节校验、结果校验、证据引用检查、占位内容检查和返工建议
 - `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源去重并组装 `ResearchResult`
@@ -2045,11 +2044,11 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 2. `research-orchestrator` 通过交互式、渐进式、循环式对话确认必要研究边界。
 3. 信息足够后，`research-orchestrator` 生成研究方案。
 4. 用户确认或修改研究方案。
-5. `research-orchestrator` 拆解检索、来源审查、章节写作、质量校验、综合和渲染任务。
-6. 每个章节按检索、来源审查、章节写作、章节校验的顺序执行。
+5. `research-orchestrator` 拆解搜索与证据整理、章节写作、质量校验、综合和渲染任务。
+6. 每个章节按搜索与证据整理、章节写作、章节校验的顺序执行。
 7. 所有章节校验通过后，进入综合、全局来源去重、`ResearchResult` 组装、结果校验和报告渲染。
 8. 任一非编排角色发现需要调整或扩展任务时，都向 `research-orchestrator` 反馈触发原因、待回答问题和建议动作。
-9. `research-orchestrator` 判断是否追加检索、来源审查、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
+9. `research-orchestrator` 判断是否追加搜索与证据整理、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
 
 ```text
 根任务：研究需求
@@ -2069,10 +2068,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
   +------------------------------+
   |                              |
   v                              v
-任务：检索章节 1              任务：检索章节 2
-  |                              |
-  v                              v
-任务：审查来源 1              任务：审查来源 2
+任务：搜索并整理章节 1 信息     任务：搜索并整理章节 2 信息
   |                              |
   v                              v
 任务：写作章节 1              任务：写作章节 2
@@ -2107,7 +2103,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - `ResearchScheme` 字段：`research_goal`、`key_questions`、`scope`、`assumptions`（可选）、`methodology`、`search_strategy`、`known_sources`、`outline`、`deliverables`、`acceptance_criteria`、`risk_boundary`
 
 ## 17.5 `search-worker`
-`search-worker` 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索。
+`search-worker` 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，并完成来源评估、事实抽取、冲突识别和证据链整理。
 
 - Toolsets：`web`、`browser`、`file`
 - Plugins：无
@@ -2115,23 +2111,11 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - Skills：`deepresearch-search`
 - Hooks：无
 - 输入：章节目标、章节证据要求、研究边界、来源策略、已有来源
-- 产出：按章节保存的 `CandidateSource`
-- 执行规则：候选来源必须写入对应章节目录，并记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息；公开网页候选来源必须记录最终 URL；内部知识库候选来源必须记录数据集和片段定位；检索不足时通过 Kanban 评论反馈缺口
-
-## 17.6 `source-reviewer`
-`source-reviewer` 负责来源去重、可信度评估、事实抽取、冲突识别和证据链整理。
-
-- Toolsets：`web`、`file`
-- Plugins：无
-- MCP：网页读取、内部知识库、数据库
-- Skills：`deepresearch-source-review`
-- Hooks：无
-- 输入：`CandidateSource`、章节问题、研究边界、来源策略
-- 产出：按章节保存的 `Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
-- 执行规则：来源、评估、事实、证据链、冲突和风险必须写入对应章节目录；`Source` 必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要；`SourceAssessment` 必须记录可信度、相关性、时效性、偏差风险和可用事实；事实卡片只保存可复核事实，不保存大段原文；冲突事实必须写入 `ConflictNote`
+- 产出：按章节保存的 `CandidateSource`、`Source`、`SourceAssessment`、`FactCard`、`EvidenceChain`、`ConflictNote`、`RiskNote`
+- 执行规则：候选来源、来源、评估、事实、证据链、冲突和风险必须写入对应章节目录；候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息；公开网页候选来源必须记录最终 URL；内部知识库候选来源必须记录数据集和片段定位；`Source` 必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要；`SourceAssessment` 必须记录可信度、相关性、时效性、偏差风险和可用事实；事实卡片只保存可复核事实，不保存大段原文；冲突事实必须写入 `ConflictNote`；检索或证据不足时通过 Kanban 评论反馈缺口
 - 来源优先级：官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容；内部知识库不伪装成公开来源
 
-## 17.7 `section-writer`
+## 17.6 `section-writer`
 `section-writer` 负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明。
 
 - Plugins：无
@@ -2142,7 +2126,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 产出：`ResearchSection`
 - 执行规则：每条关键判断必须关联 `EvidenceChain`；`EvidenceChain.source_ids` 必须能对应到 `Source.source_id`；章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界；章节正文不得新增无来源事实
 
-## 17.8 `quality-reviewer`
+## 17.7 `quality-reviewer`
 `quality-reviewer` 负责章节校验、研究结果校验、证据引用检查、占位内容检查和返工建议。
 
 - Plugins：无
@@ -2155,7 +2139,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 结果校验：所有需要正文的章节都已保存；所有章节校验已通过；全局来源列表去重完成；`FactCard`、`InsightCard`、`Recommendation` 和章节风险说明与章节证据链一致；报告渲染输入不包含占位内容
 - 返工规则：校验失败时通过 Kanban 评论记录触发原因、影响章节、待回答问题、建议动作和是否需要用户确认
 
-## 17.9 `synthesis-writer`
+## 17.8 `synthesis-writer`
 `synthesis-writer` 负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，完成全局来源去重，并把所有章节、来源、证据和综合结果组装为 `ResearchResult`。
 
 - Plugins：无
@@ -2166,7 +2150,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 产出：`ResearchSynthesis`、`InsightCard`、`Recommendation`、`ResearchResult`
 - 执行规则：综合结论必须能回溯到章节证据链；建议必须包含适用条件和风险前提；跨章节冲突必须保留冲突说明；全局风险写入 `ResearchSynthesis`；`ResearchResult` 只能组装已存在的章节、来源、证据和综合结果；不得新增无来源事实
 
-## 17.10 `report-renderer`
+## 17.9 `report-renderer`
 `report-renderer` 负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录。
 
 - Toolsets：`file`

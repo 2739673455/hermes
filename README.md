@@ -2046,18 +2046,19 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - `report-renderer`：基于结构化研究结果生成 HTML
 
 ## 17.3 流程与任务图
-1. `research-orchestrator` 接收研究需求。
-2. `research-orchestrator` 通过交互式、渐进式、循环式对话确认必要研究边界。
-3. 研究边界确认后，`research-orchestrator` 生成研究方案。
-4. 用户确认或修改研究方案。
-5. `research-orchestrator` 拆解搜索与证据整理、章节写作、质量校验、综合和渲染任务。
-6. 每个章节按搜索与证据整理、章节写作、章节校验的顺序执行。
-7. 所有章节校验通过后，进入综合、全局来源去重、`result/research_result.json` 组装、结果校验和报告渲染。
-8. 任一非编排角色发现需要调整或扩展任务时，都向 `research-orchestrator` 反馈触发原因、待回答问题和建议动作。
-9. `research-orchestrator` 判断是否追加搜索与证据整理、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
+1. 项目启动时，用户直接与 `research-orchestrator` 沟通研究需求，或在 Kanban 中创建一个委派给 `research-orchestrator` 的任务。
+2. `research-orchestrator` 接收研究需求。
+3. `research-orchestrator` 通过交互式、渐进式、循环式对话确认必要研究边界。
+4. 研究边界确认后，`research-orchestrator` 生成研究方案。
+5. 用户确认或修改研究方案。
+6. `research-orchestrator` 拆解搜索与证据整理、章节写作、质量校验、综合和渲染任务。
+7. 每个章节按搜索与证据整理、章节写作、章节校验的顺序执行。
+8. 所有章节校验通过后，进入综合、全局来源去重、`result/research_result.json` 组装、结果校验和报告渲染。
+9. 任一非编排角色发现需要调整或扩展任务时，在当前任务的 Kanban 评论中使用统一反馈格式记录触发原因、受影响章节、待回答问题、建议动作和是否需要用户确认，必要时阻塞当前任务。
+10. `research-orchestrator` 读取相关任务评论、阻塞状态和校验结果，判断是否追加搜索与证据整理、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
 
 ```text
-根任务：研究需求
+任务：研究需求
   |
   v
 人工：确认必要研究边界

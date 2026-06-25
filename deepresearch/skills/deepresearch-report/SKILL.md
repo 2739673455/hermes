@@ -1,6 +1,6 @@
 ---
 name: deepresearch-report
-description: 深度研究报告渲染技能。用于 report-renderer profile 在结果校验通过后确定性生成 HTML 报告、current.html、vNNN.html、reports/index.json，并更新 project.json.current_report_version
+description: 深度研究报告渲染技能。用于 report-renderer profile 在结果校验通过后读取 project.json 和 research_result.json，确定性生成 current.html、vNNN.html、reports/index.json，并更新 project.json.current_report_version
 version: 1.0.0
 metadata:
   hermes:
@@ -8,15 +8,29 @@ metadata:
     category: deepresearch
     requires_toolsets: [file]
 ---
+
 # DeepResearch Report
 ## Role
-- 作为报告制作编辑，把已校验的结构化研究结果渲染为 HTML 报告
-- 只产出 `reports/current.html`、`reports/vNNN.html`、`reports/index.json` 和更新后的 `project.json.current_report_version`
+- 你是报告制作编辑
+- 你负责把已校验的结构化研究结果渲染为 HTML 报告
+- 你不直接向用户提问，也不创建返工任务
+
+## Before Starting
+- 先读取当前任务正文或当前任务上下文
+- 确认当前任务至少提供以下信息：
+  - `project_id`
+  - `workspace_path`
+  - `task_type=report_render`
+  - 输入路径和输出路径
+- 如果当前任务不是 `report_render` 类型，不继续执行
+- 任务正文中的 `inputs` 和 `outputs` 是当前任务的实际文件契约，和默认目录约定冲突时以任务正文为准
 
 ## Inputs
+- `project.json`
 - `result/research_result.json`
 - `result/validation.json`
 - `workspace_path`
+- 当前任务中的 `objective`、`constraints` 和 `acceptance_criteria`
 
 ## Outputs
 - `reports/current.html`
@@ -25,17 +39,22 @@ metadata:
 - 更新后的 `project.json.current_report_version`
 
 ## Procedure
-1. 读取 `result/validation.json`
-2. 确认 `result/validation.json.status` 为 `passed`
-3. 读取 `result/research_result.json`
-4. 读取已有 `reports/index.json`
-5. 计算下一个版本编号 `vNNN`
-6. 生成可渲染报告数据
-7. 确定性生成 HTML
-8. 写入 `reports/vNNN.html`
-9. 写入或覆盖 `reports/current.html`
-10. 更新 `reports/index.json`
-11. 更新 `project.json.current_report_version`
+1. 读取 `project.json`
+2. 读取 `result/validation.json`
+3. 确认 `result/validation.json.status` 为 `passed`
+4. 读取 `result/research_result.json`
+5. 确保 `reports/` 目录存在
+6. 读取已有 `reports/index.json`
+7. `reports/index.json` 不存在时初始化：
+   - `current_version: null`
+   - `versions: []`
+8. 计算下一个版本编号 `vNNN`
+9. 生成可渲染报告数据
+10. 确定性生成 HTML
+11. 写入 `reports/vNNN.html`
+12. 写入或覆盖 `reports/current.html`
+13. 更新 `reports/index.json`
+14. 更新 `project.json.current_report_version`
 
 ## Render Rules
 - 结果校验通过后才能渲染
@@ -48,6 +67,7 @@ metadata:
 - `reports/index.json` 必须记录报告格式、引用来源编号、生成时间和存储地址
 - HTML 必须转义来自 JSON 的文本内容
 - HTML 不加载远程脚本，不依赖外部构建步骤
+- 章节渲染顺序必须与 `result/research_result.json.scheme.outline` 一致
 
 ## HTML Structure
 - `<title>`：研究目标或报告标题
@@ -69,7 +89,7 @@ metadata:
 - 内部知识库、上传文件、数据库和 API 来源显示 `source_type`、`document_id` 和 `locator`
 - 来源汇总按 `source_id` 升序列出全部引用来源
 
-## Index Schema
+## reports/index.json
 - `current_version`：当前版本编号，格式为 `vNNN`
 - `versions`：报告版本列表
   - `version`：版本编号，格式为 `vNNN`
@@ -85,6 +105,29 @@ metadata:
 - `reports/current.html` 与本次 `reports/vNNN.html` 内容一致
 - `reports/index.json.current_version` 与 `project.json.current_report_version` 一致
 - `versions.file_path` 使用项目 workspace 内相对路径
+- 首次渲染时允许 `reports/index.json` 不存在，但必须在本次渲染中创建
+
+## Feedback Contract
+- 当你无法完成渲染或判断需要补充输入时，输出统一反馈对象
+- 字段：
+  - `reason`：触发原因
+  - `affected_section_ids`：影响章节
+  - `question_to_answer`：待回答问题
+  - `suggested_action`：建议动作
+  - `required_user_input`：`true` 或 `false`
+- `reason` 和 `suggested_action` 必须指明失败输入、缺失版本记录字段或无法渲染的内容位置
+
+## Handoff Rules
+- `result/validation.json.status` 不是 `passed`、`project.json` 缺失或渲染输入不完整时，不得生成或覆盖报告
+- 能形成完整报告并更新版本记录时，先写入 HTML、`reports/index.json` 和 `project.json`，再在 Kanban 任务上下文内完成当前任务
+- 需要上游返工、补齐输入或用户判断时，整理统一反馈对象
+- 在 Kanban 任务上下文内：
+  - 先记录反馈
+  - 再阻塞当前任务
+- 不在 Kanban 任务上下文内：
+  - 在回复中返回同一反馈对象
+  - 不额外发明新文件
+- 无论哪种情况，都不直接向用户提问
 
 ## Verification
 - `result/validation.json.status` 为 `passed`

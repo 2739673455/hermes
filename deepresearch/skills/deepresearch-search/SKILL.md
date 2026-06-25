@@ -1,6 +1,6 @@
 ---
 name: deepresearch-search
-description: 深度研究章节检索技能。用于 search-worker profile 按 section_id 执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，生成 research.json、来源评估、事实、证据链、冲突、风险和证据缺口反馈
+description: 深度研究章节检索技能。用于 search-worker profile 根据章节任务执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，生成 research.json、来源评估、事实、证据链、冲突、风险和证据缺口反馈
 version: 1.0.0
 metadata:
   hermes:
@@ -8,34 +8,68 @@ metadata:
     category: deepresearch
     requires_toolsets: [web, browser, file]
 ---
+
 # DeepResearch Search
 ## Role
-- 作为资料研究员，为单个章节完成检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录
-- 只产出 `sections/<section_id>/research.json` 和必要的缺口反馈
+- 你是资料研究员
+- 你只负责单个章节的检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录
+- 你不直接向用户提问，也不创建返工任务、写作任务、校验任务、综合任务或渲染任务
+
+## Before Starting
+- 先读取当前任务正文或当前任务上下文
+- 确认当前任务至少提供以下信息：
+  - `project_id`
+  - `section_id`
+  - `workspace_path`
+  - `task_type=search`
+  - 输入路径和输出路径
+- 如果当前任务不是 `search` 类型，不继续执行
+- 任务正文中的 `inputs` 和 `outputs` 是当前任务的实际文件契约，和默认目录约定冲突时以任务正文为准
 
 ## Inputs
 - `scheme.json`
 - `section_id`
 - `workspace_path`
+- 当前任务中的 `objective`、`constraints` 和 `acceptance_criteria`
 
 ## Output
 - `sections/<section_id>/research.json`
 
+## Read From scheme.json
+- 通过 `section_id` 找到当前章节
+- 读取本章：
+  - `title`
+  - `objective`
+  - `key_questions`
+  - `evidence_requirements`
+  - `required`
+- 读取全局：
+  - `scope`
+  - `search_strategy`
+  - `known_sources`
+  - `risk_boundary`
+
 ## Procedure
-1. 读取 `scheme.json`，通过 `section_id` 定位 `outline` 中的章节
-2. 读取章节目标、章节关键问题和 `evidence_requirements`
-3. 读取 `scope`、`search_strategy`、`known_sources` 和 `risk_boundary`
-4. 扫描已存在的 `sections/*/research.json`，避免生成重复 `source_id`
-5. 生成 `search_plan.queries`、`search_plan.source_types` 和 `search_plan.constraints`
-6. 按公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 执行可用渠道检索
-7. 将召回结果写入 `candidate_sources`
-8. 筛选可引用来源并写入 `sources`
-9. 对每个可引用来源写入 `source_evaluations`
-10. 抽取可复核事实并写入 `facts`
-11. 把关键判断组织为 `evidence_chains`
-12. 记录互相矛盾的信息、章节风险和证据缺口
-13. 保存 `sections/<section_id>/research.json`
-14. 检索或证据不足时通过 Kanban 评论提交反馈
+1. 读取 `scheme.json` 并确认 `section_id` 存在于 `outline`
+2. 读取当前任务约束，确认本章必须回答的问题和证据要求
+3. 生成章节搜索计划：
+   - 检索词
+   - 目标来源类型
+   - 搜索约束
+4. 执行可用的检索渠道：
+   - 公开网页
+   - 指定站点
+   - 上传文件
+   - 内部知识库
+   - 数据库
+   - 外部 API
+5. 把重要召回结果写入 `candidate_sources`
+6. 从候选来源中筛选可引用来源，写入 `sources`
+7. 对每个可引用来源写入 `source_evaluations`
+8. 抽取可复核事实并写入 `facts`
+9. 把关键判断组织成 `evidence_chains`
+10. 记录冲突信息、章节风险和证据缺口
+11. 保存 `sections/<section_id>/research.json`
 
 ## Source Rules
 - 来源优先级：官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容
@@ -45,8 +79,11 @@ metadata:
 - 上传文件、内部知识库、数据库和 API 来源必须记录 `document_id` 与 `locator`
 - 可复核事实不保存大段原文
 - 事实文本必须足够具体，能够被 `source_ids` 回溯验证
+- `source_id` 在章节内唯一，格式为 `src-<section_id>-NNN`
+- `conflict_id`、`risk_id` 和 `gap_id` 在章节内唯一
+- 缺少足够证据时可以保存带 `gaps` 的 `research.json`，但不得把当前任务标记为完成
 
-## Output Schema
+## research.json
 - `section_id`：章节编号，格式为 `sNNN`
 - `search_plan`：章节搜索计划
   - `queries`：检索词
@@ -62,7 +99,7 @@ metadata:
   - `snippet`：摘要片段
   - `retrieved_at`：召回时间，使用 ISO 8601 字符串
 - `sources`：可引用来源
-  - `source_id`：来源编号，格式为 `src-NNNN`
+  - `source_id`：来源编号，格式为 `src-<section_id>-NNN`
   - `title`：标题
   - `url`：公开网页最终 URL
   - `document_id`：非公开网页来源的文档编号
@@ -100,22 +137,35 @@ metadata:
   - `description`：缺口说明
   - `required_evidence`：所需证据
 
-## Feedback
-- 检索不足、证据不足、范围冲突或需要用户提供内部资料时提交反馈
-- 反馈字段：
+## Feedback Contract
+- 当你无法完成章节检索或判断需要补充输入时，输出统一反馈对象
+- 字段：
   - `reason`：触发原因
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
+- `reason` 和 `suggested_action` 必须指明当前缺口对应的章节问题、缺失来源类型或失败文件字段
+
+## Handoff Rules
+- 缺少必需输入、章节不存在、研究范围冲突或无法访问必需来源时，不得伪造输出
+- 能形成完整、可校验的 `research.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
+- 需要追加资料、追加检索、用户判断或上游修正时，整理统一反馈对象
+- 在 Kanban 任务上下文内：
+  - 先记录反馈
+  - 再阻塞当前任务
+- 不在 Kanban 任务上下文内：
+  - 在回复中返回同一反馈对象
+  - 不额外发明新文件
+- 无论哪种情况，都不直接向用户提问
 
 ## Verification
 - `section_id` 存在于 `scheme.json.outline`
-- `sources.source_id` 在项目 workspace 内唯一
-- `candidate_sources` 记录所有重要召回来源
-- 每个 `source_evaluations.source_id` 能对应 `sources.source_id`
-- 每个 `facts.source_ids` 能对应 `sources.source_id`
-- 每个 `evidence_chains.fact_ids` 能对应 `facts.fact_id`
-- 每个 `evidence_chains.source_ids` 能对应 `sources.source_id`
+- `candidate_sources` 记录了重要召回来源
+- 每个 `source_evaluations.source_id` 都能对应 `sources.source_id`
+- 每个 `facts.source_ids` 都能对应 `sources.source_id`
+- 每个 `evidence_chains.fact_ids` 都能对应 `facts.fact_id`
+- 每个 `evidence_chains.source_ids` 都能对应 `sources.source_id`
 - 公开来源包含 HTTP URL
 - 内部知识库、上传文件、数据库和 API 来源包含 `document_id` 与 `locator`
+- 所有来源、冲突、风险和缺口编号在当前章节内唯一

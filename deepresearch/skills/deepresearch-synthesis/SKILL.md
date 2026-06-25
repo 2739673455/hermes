@@ -8,10 +8,22 @@ metadata:
     category: deepresearch
     requires_toolsets: [file]
 ---
+
 # DeepResearch Synthesis
 ## Role
-- 作为综合编辑，把已通过校验的章节结果组装为最终结构化研究结果
-- 只产出 `synthesis/synthesis.json` 和 `result/research_result.json`
+- 你是综合编辑
+- 你负责把通过校验的章节结果组装为最终结构化研究结果
+- 你不直接向用户提问，也不创建返工任务
+
+## Before Starting
+- 先读取当前任务正文或当前任务上下文
+- 确认当前任务至少提供以下信息：
+  - `project_id`
+  - `workspace_path`
+  - `task_type=synthesis`
+  - 输入路径和输出路径
+- 如果当前任务不是 `synthesis` 类型，不继续执行
+- 任务正文中的 `inputs` 和 `outputs` 是当前任务的实际文件契约，和默认目录约定冲突时以任务正文为准
 
 ## Inputs
 - `scheme.json`
@@ -19,17 +31,23 @@ metadata:
 - 全部章节的 `sections/<section_id>/research.json`
 - 全部章节的 `sections/<section_id>/section.json`
 - 全部章节的 `sections/<section_id>/validation.json`
+- 当前任务中的 `objective`、`constraints` 和 `acceptance_criteria`
 
 ## Outputs
 - `synthesis/synthesis.json`
 - `result/research_result.json`
+
+## Read From scheme.json
+- 读取全部章节定义
+- 区分必需章节和非必需章节
+- 读取 `deliverables`、`acceptance_criteria` 和 `risk_boundary`
 
 ## Procedure
 1. 读取 `scheme.json` 并列出全部必需章节
 2. 确认全部必需章节的 `validation.json.status` 为 `passed`
 3. 读取全部已通过章节的 `research.json` 和 `section.json`
 4. 构建跨章节事实索引、证据链索引、来源索引、冲突清单和风险清单
-5. 对全局来源列表去重并建立 `source_id` 映射
+5. 对全局来源列表去重并建立 canonical `source_id` 映射
 6. 生成执行摘要、核心结论、跨章节洞察和建议
 7. 汇总跨章节冲突和全局风险
 8. 保存 `synthesis/synthesis.json`
@@ -38,6 +56,7 @@ metadata:
 
 ## Synthesis Rules
 - 只使用已保存且校验通过的章节、来源、事实和证据链
+- 非必需章节只有在章节文件和章节校验都已完成且通过时才能纳入综合结果
 - 不得新增 `research.json` 或 `section.json` 中不存在的事实、来源或证据链
 - 综合结论必须能回溯到章节证据链
 - 跨章节洞察必须列出关联章节
@@ -47,6 +66,7 @@ metadata:
 - `result/research_result.json` 只能组装已存在的章节、来源、证据和综合结果
 - 全局来源列表必须去重
 - 输出不得包含未完成内容、TODO、占位符或待确认文本
+- `result/research_result.json.sections` 按 `scheme.json.outline` 的章节顺序输出
 
 ## Source Dedupe
 - 公开来源按规范化后的 URL 去重
@@ -55,7 +75,7 @@ metadata:
 - 去重后必须把全局事实、证据链、综合结果和 `research_result.json.sections` 中的 `source_ids` 映射到 canonical ID
 - 无法确认是否重复的来源保留为独立来源
 
-## Synthesis Schema
+## synthesis.json
 - `executive_summary`：执行摘要
 - `core_conclusions`：核心结论
   - `conclusion_id`：核心结论编号，格式为 `conclusion-NNN`
@@ -84,9 +104,9 @@ metadata:
   - `description`：风险说明
   - `applies_to`：适用对象
 
-## Research Result Schema
+## research_result.json
 - `project_id`：研究项目编号
-- `scheme`：研究方案
+- `scheme`：已确认 `scheme.json` 的完整快照
 - `sections`：章节结果，字段结构同 `sections/<section_id>/section.json`
 - `synthesis`：综合结果
 - `facts`：全局可复核事实
@@ -95,7 +115,7 @@ metadata:
   - `source_ids`：来源编号
   - `evidence_chain_ids`：证据链编号
 - `sources`：全局来源列表
-  - `source_id`：来源编号，格式为 `src-NNNN`
+  - `source_id`：canonical 来源编号，沿用去重后保留的 `src-<section_id>-NNN`
   - `title`：标题
   - `url`：公开网页最终 URL
   - `document_id`：非公开网页来源的文档编号
@@ -114,14 +134,27 @@ metadata:
   - `applies_to`：适用对象
 - `deliverables`：交付内容
 
-## Feedback
-- 章节校验未通过、必要章节缺失、全局引用断裂或来源无法去重时提交反馈
-- 反馈字段：
+## Feedback Contract
+- 当你无法完成综合组装或判断需要补充输入时，输出统一反馈对象
+- 字段：
   - `reason`：触发原因
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
+- `reason` 和 `suggested_action` 必须指明缺失章节、断裂引用或无法判定的去重对象
+
+## Handoff Rules
+- 任一必需章节未通过校验、缺少输入文件、全局引用断裂或无法确定 canonical 来源映射时，不得继续组装最终结果
+- 能形成完整、可校验的 `synthesis.json` 和 `research_result.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
+- 需要返工、补齐章节、补齐来源信息或用户判断时，整理统一反馈对象
+- 在 Kanban 任务上下文内：
+  - 先记录反馈
+  - 再阻塞当前任务
+- 不在 Kanban 任务上下文内：
+  - 在回复中返回同一反馈对象
+  - 不额外发明新文件
+- 无论哪种情况，都不直接向用户提问
 
 ## Verification
 - 所有必需章节的章节校验均为通过状态

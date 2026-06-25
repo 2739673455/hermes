@@ -2133,6 +2133,14 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - Skills：`deepresearch-orchestrator`
 - Hooks：无
 
+### Profile 配置
+```bash
+hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务图维护、返工调度和交付汇总"
+research-orchestrator config set toolsets '["hermes-cli", "kanban"]'
+mkdir -p ~/.hermes/profiles/research-orchestrator/skills
+cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/
+```
+
 ### 阶段
 - 研究准备
   - 输入：用户研究需求、已有上下文、用户补充边界
@@ -2160,6 +2168,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
   - 执行规则：
     - 任务拆解必须包含章节编号、负责角色、输入路径、输出路径、依赖关系和验收条件
     - 只创建和维护任务，不直接执行检索、写作、综合、校验或渲染
+    - 创建完任务后必须补齐依赖关系和输入输出路径
 - 返工协调
   - 输入：非编排角色反馈、校验失败结果、用户补充信息
   - 输出：重跑任务、用户确认请求、阻塞说明
@@ -2173,6 +2182,8 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 需要用户判断时阻塞相关任务
     - 不需要用户判断时，只创建能修复当前失败点的返工任务
     - 范围变更必须更新 `scheme.json` 和受影响的 Kanban 任务
+    - 需要用户判断时先记录反馈，再阻塞相关任务
+    - 不需要用户判断时先创建最小返工任务，再更新依赖关系
 - 交付完成
   - 输入：`result/research_result.json`、`result/validation.json`、`reports/index.json`、未解决阻塞
   - 输出：根任务完成摘要、报告路径、版本记录路径、剩余风险
@@ -2244,6 +2255,16 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - Skills：`deepresearch-search`
 - Hooks：无
 
+### Profile 配置
+```bash
+hermes profile create search-worker --clone --description "资料研究员：负责按章节目标执行检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录"
+mkdir -p ~/.hermes/profiles/search-worker/skills
+cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/skills/
+```
+- Kanban 任务上下文会自动提供任务交接所需的 Kanban 工具，不需要在 profile 中直接启用 `kanban`
+- MCP：`internal_knowledge`、`research_database`、`external_api`
+- MCP 配置位置：`~/.hermes/profiles/search-worker/config.yaml` 的 `mcp_servers`
+
 ### 阶段
 - 搜索与证据整理
   - 输入：`scheme.json`、`section_id`、`workspace_path`
@@ -2262,11 +2283,13 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息
     - 公开网页候选来源必须记录最终 URL
     - 内部知识库候选来源必须记录数据集和片段定位
-    - 可引用来源必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要
+    - 可引用来源必须包含章节内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要
     - 来源评估必须记录可信度、相关性、时效性、偏差风险和可用事实
     - 可复核事实不保存大段原文
     - 不得用低可信来源填补关键证据缺口
-    - 检索或证据不足时通过 Kanban 评论反馈缺口
+    - 当前任务成功时先保存 `sections/<section_id>/research.json`，再完成当前任务
+    - 检索或证据不足时使用统一反馈格式记录缺口并阻塞当前任务
+    - 不创建返工任务或下游任务
 
 ### 文件格式
 `sections/<section_id>/research.json` 字段：
@@ -2285,7 +2308,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
   - `snippet`：摘要片段
   - `retrieved_at`：召回时间，使用 ISO 8601 字符串
 - `sources`：可引用来源
-  - `source_id`：来源编号，格式为 `src-NNNN`
+  - `source_id`：来源编号，格式为 `src-<section_id>-NNN`
   - `title`：标题
   - `url`：公开网页最终 URL
   - `document_id`：上传文件、内部知识库、数据库或外部 API 文档编号
@@ -2311,15 +2334,15 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
   - `fact_ids`：事实编号
   - `source_ids`：来源编号
 - `conflicts`：冲突信息
-  - `conflict_id`：冲突编号
+  - `conflict_id`：冲突编号，格式为 `conflict-<section_id>-NNN`
   - `description`：冲突说明
   - `source_ids`：来源编号
 - `risks`：风险说明
-  - `risk_id`：风险编号
+  - `risk_id`：风险编号，格式为 `risk-<section_id>-NNN`
   - `description`：风险说明
   - `applies_to`：适用对象
 - `gaps`：证据缺口
-  - `gap_id`：缺口编号
+  - `gap_id`：缺口编号，格式为 `gap-<section_id>-NNN`
   - `description`：缺口说明
   - `required_evidence`：所需证据
 
@@ -2337,6 +2360,14 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - MCP：无
 - Skills：`deepresearch-section`
 - Hooks：无
+
+### Profile 配置
+```bash
+hermes profile create section-writer --clone --description "专题撰稿编辑：负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明"
+mkdir -p ~/.hermes/profiles/section-writer/skills
+cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer/skills/
+```
+- Kanban 任务上下文会自动提供任务交接所需的 Kanban 工具，不需要在 profile 中直接启用 `kanban`
 
 ### 阶段
 - 章节写作
@@ -2356,6 +2387,9 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 章节正文不得新增无来源事实
     - 章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界
     - 未完成内容不得进入 `sections/<section_id>/section.json`
+    - 当前任务成功时先保存 `sections/<section_id>/section.json`，再完成当前任务
+    - 证据不足、证据链断裂或需要补充资料时使用统一反馈格式阻塞当前任务
+    - 不创建返工任务或下游任务
 
 ### 文件格式
 `sections/<section_id>/section.json` 字段：
@@ -2406,6 +2440,14 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - Skills：`deepresearch-quality`
 - Hooks：无
 
+### Profile 配置
+```bash
+hermes profile create quality-reviewer --clone --description "事实核查编辑：负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议"
+mkdir -p ~/.hermes/profiles/quality-reviewer/skills
+cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-reviewer/skills/
+```
+- Kanban 任务上下文会自动提供任务交接所需的 Kanban 工具，不需要在 profile 中直接启用 `kanban`
+
 ### 阶段
 - 章节校验
   - 输入：`scheme.json`、`section_id`、`workspace_path`、当前章节的 `sections/<section_id>/research.json`、`sections/<section_id>/section.json`
@@ -2418,10 +2460,13 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
   - 执行规则：
     - 章节正文不能为空
     - 每章至少包含一条关键发现和一条证据链
+    - 证据链引用的 `fact_id` 必须存在
     - 证据链引用的 `source_id` 必须存在
     - 公开来源必须提供 HTTP URL
     - 内部知识库来源必须标记来源类型
-    - 校验失败时通过 Kanban 评论记录返工反馈
+    - 缺少必需输入文件或必需章节数据时，校验状态记为 `blocked`
+    - 校验通过时先保存 `sections/<section_id>/validation.json`，再完成当前任务
+    - 校验失败或阻塞时先保存 `sections/<section_id>/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
     - 返工反馈必须能指向具体失败点
 - 结果校验
   - 输入：`scheme.json`、`workspace_path`、全部章节校验结果、`synthesis/synthesis.json`、`result/research_result.json`、全局来源列表、全局证据链
@@ -2434,9 +2479,11 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 生成校验结果和返工反馈
   - 执行规则：
     - 所有需要正文的章节都已保存
-    - 所有章节校验已通过
+    - 所有必需章节校验已通过
     - 报告渲染输入不包含未完成内容或占位符
-    - 校验失败时通过 Kanban 评论记录返工反馈
+    - 缺少必需输入文件、缺少必需章节校验文件或需要用户判断时，校验状态记为 `blocked`
+    - 校验通过时先保存 `result/validation.json`，再完成当前任务
+    - 校验失败或阻塞时先保存 `result/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
     - 返工反馈必须能指向具体失败点
 
 ### 文件格式
@@ -2492,6 +2539,14 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - Skills：`deepresearch-synthesis`
 - Hooks：无
 
+### Profile 配置
+```bash
+hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源去重、全局风险整理和结构化研究结果组装"
+mkdir -p ~/.hermes/profiles/synthesis-writer/skills
+cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/
+```
+- Kanban 任务上下文会自动提供任务交接所需的 Kanban 工具，不需要在 profile 中直接启用 `kanban`
+
 ### 阶段
 - 综合与组装
   - 输入：`scheme.json`、`workspace_path`、全部章节的 `sections/<section_id>/research.json`、`sections/<section_id>/section.json` 和章节校验结果
@@ -2503,6 +2558,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 组装 `result/research_result.json`
   - 执行规则：
     - 只使用已保存的章节、来源、事实和证据链
+    - 非必需章节只有在章节文件和章节校验都已完成且通过时才能纳入综合结果
     - 综合结论必须能回溯到章节证据链
     - 建议必须包含适用条件和风险前提
     - 跨章节冲突必须保留冲突说明
@@ -2510,6 +2566,9 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - `result/research_result.json` 只能组装已存在的章节、来源、证据和综合结果
     - 全局来源列表必须去重
     - 不得新增事实、来源、判断或证据链
+    - `result/research_result.json.sections` 按 `scheme.json.outline` 的章节顺序输出
+    - 当前任务成功时先保存 `synthesis/synthesis.json` 和 `result/research_result.json`，再完成当前任务
+    - 必需章节未通过校验、缺少输入文件或全局引用断裂时使用统一反馈格式阻塞当前任务
 
 ### 文件格式
 `synthesis/synthesis.json` 字段：
@@ -2543,7 +2602,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 
 `result/research_result.json` 字段：
 - `project_id`：研究项目编号
-- `scheme`：研究方案
+- `scheme`：已确认 `scheme.json` 的完整快照
 - `sections`：章节结果，字段结构同 `sections/<section_id>/section.json`
 - `synthesis`：综合结果
 - `facts`：全局可复核事实
@@ -2552,7 +2611,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
   - `source_ids`：来源编号
   - `evidence_chain_ids`：证据链编号
 - `sources`：全局来源列表
-  - `source_id`：来源编号
+  - `source_id`：去重后保留的 canonical 来源编号，格式沿用 `src-<section_id>-NNN`
   - `title`：标题
   - `url`：公开网页最终 URL
   - `document_id`：上传文件、内部知识库、数据库或外部 API 文档编号
@@ -2582,12 +2641,23 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - Skills：`deepresearch-report`
 - Hooks：无
 
+### Profile 配置
+```bash
+hermes profile create report-renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
+mkdir -p ~/.hermes/profiles/report-renderer/skills
+cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer/skills/
+```
+- Kanban 任务上下文会自动提供任务交接所需的 Kanban 工具，不需要在 profile 中直接启用 `kanban`
+
 ### 阶段
 - 报告渲染
-  - 输入：`result/research_result.json`、`result/validation.json`、`workspace_path`
+  - 输入：`project.json`、`result/research_result.json`、`result/validation.json`、`workspace_path`
   - 输出：`reports/current.html`、`reports/vNNN.html`、`reports/index.json`、更新后的 `project.json.current_report_version`
   - 步骤：
+    - 读取 `project.json`
     - 检查结果校验状态
+    - 确保 `reports/` 目录存在
+    - 首次渲染时初始化 `reports/index.json`
     - 生成可渲染报告数据
     - 确定性生成 HTML
     - 写入报告版本记录
@@ -2599,6 +2669,9 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 正文、表格和图表必须附相关来源链接
     - 报告必须包含执行摘要、正文、表格或图表、来源汇总、风险说明和版本信息
     - `reports/index.json` 必须记录报告格式、引用来源编号、生成时间和存储地址
+    - 首次渲染时 `reports/index.json` 可以不存在，但必须在本次渲染中创建并生成 `v001`
+    - 当前任务成功时先写入 HTML、`reports/index.json` 和 `project.json`，再完成当前任务
+    - 结果校验未通过、`project.json` 缺失或渲染输入不完整时使用统一反馈格式阻塞当前任务
 
 ### 文件格式
 `reports/index.json` 字段：
@@ -2619,55 +2692,3 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - 来源汇总
 - 风险说明
 - 版本信息
-
-## 17.11 Profile 与 Skill 配置
-### `research-orchestrator`
-- Profile 创建与工具配置：
-```bash
-hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务图维护、返工调度和交付汇总"
-research-orchestrator config set toolsets '["kanban"]'
-mkdir -p ~/.hermes/profiles/research-orchestrator/skills
-cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/
-```
-
-### `search-worker`
-- Profile 创建与工具配置：
-```bash
-hermes profile create search-worker --clone --description "资料研究员：负责按章节目标执行检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录"
-mkdir -p ~/.hermes/profiles/search-worker/skills
-cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/skills/
-```
-- MCP：`internal_knowledge`、`research_database`、`external_api`
-- MCP 配置位置：`~/.hermes/profiles/search-worker/config.yaml` 的 `mcp_servers`
-
-### `section-writer`
-- Profile 创建与工具配置：
-```bash
-hermes profile create section-writer --clone --description "专题撰稿编辑：负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明"
-mkdir -p ~/.hermes/profiles/section-writer/skills
-cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer/skills/
-```
-
-### `quality-reviewer`
-- Profile 创建与工具配置：
-```bash
-hermes profile create quality-reviewer --clone --description "事实核查编辑：负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议"
-mkdir -p ~/.hermes/profiles/quality-reviewer/skills
-cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-reviewer/skills/
-```
-
-### `synthesis-writer`
-- Profile 创建与工具配置：
-```bash
-hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源去重、全局风险整理和结构化研究结果组装"
-mkdir -p ~/.hermes/profiles/synthesis-writer/skills
-cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/
-```
-
-### `report-renderer`
-- Profile 创建与工具配置：
-```bash
-hermes profile create report-renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
-mkdir -p ~/.hermes/profiles/report-renderer/skills
-cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer/skills/
-```

@@ -10,11 +10,22 @@ import sys
 from pathlib import Path
 
 TITLE = "Hermes"
-MESSAGE = "Finished"
+MESSAGE = "完成"
 DURATION = 4.0
 BACKGROUND_COLOR = "#F52B2B2B"
-TEXT_COLOR = "#f3f4f6"
+TEXT_COLOR = "#F2F5F7"
 DISPLAY_ENV = "HERMES_POPUP_DISPLAY"
+MIN_WIDTH = 180
+MIN_HEIGHT = 54
+MAX_TEXT_WIDTH = 420
+HORIZONTAL_PADDING = 22
+VERTICAL_PADDING = 10
+CORNER_RADIUS = 8
+TITLE_FONT_SIZE = 13
+MESSAGE_FONT_SIZE = 12
+MESSAGE_SPACING = 6
+TITLE_MAX_HEIGHT = 38
+MESSAGE_MAX_HEIGHT = 68
 
 
 def escape_powershell(value: str) -> str:
@@ -120,19 +131,19 @@ def show_windows_toast(title: str, message: str, duration: float) -> None:
         "$w.SizeToContent='WidthAndHeight'\n"
         "$w.WindowStartupLocation='CenterScreen'\n"
         "$w.Background='Transparent'\n"
-        "$w.MinWidth=180\n"
-        "$w.MinHeight=54\n"
+        f"$w.MinWidth={MIN_WIDTH}\n"
+        f"$w.MinHeight={MIN_HEIGHT}\n"
         "$panel=New-Object System.Windows.Controls.StackPanel\n"
         "$panel.Orientation='Vertical'\n"
         "$panel.HorizontalAlignment='Center'\n"
         "$panel.VerticalAlignment='Center'\n"
         "$border=New-Object System.Windows.Controls.Border\n"
-        "$border.Padding='22,10,22,10'\n"
+        f"$border.Padding='{HORIZONTAL_PADDING},{VERTICAL_PADDING},{HORIZONTAL_PADDING},{VERTICAL_PADDING}'\n"
         "$border.Margin='12'\n"
-        "$border.MinWidth=180\n"
-        "$border.MinHeight=54\n"
-        "$border.MaxWidth=464\n"
-        "$border.CornerRadius=8\n"
+        f"$border.MinWidth={MIN_WIDTH}\n"
+        f"$border.MinHeight={MIN_HEIGHT}\n"
+        f"$border.MaxWidth={MAX_TEXT_WIDTH + (HORIZONTAL_PADDING * 2)}\n"
+        f"$border.CornerRadius={CORNER_RADIUS}\n"
         f"$border.Background='{BACKGROUND_COLOR}'\n"
         "$shadow=New-Object System.Windows.Media.Effects.DropShadowEffect\n"
         "$shadow.BlurRadius=18\n"
@@ -144,22 +155,22 @@ def show_windows_toast(title: str, message: str, duration: float) -> None:
         "$title=New-Object System.Windows.Controls.TextBlock\n"
         f"$title.Text='{escape_powershell(title)}'\n"
         f"$title.Foreground='{TEXT_COLOR}'\n"
-        "$title.FontSize=13\n"
+        f"$title.FontSize={TITLE_FONT_SIZE}\n"
         "$title.FontWeight='Bold'\n"
         "$title.TextAlignment='Center'\n"
         "$title.TextWrapping='Wrap'\n"
-        "$title.MaxWidth=420\n"
-        "$title.MaxHeight=38\n"
+        f"$title.MaxWidth={MAX_TEXT_WIDTH}\n"
+        f"$title.MaxHeight={TITLE_MAX_HEIGHT}\n"
         "$title.HorizontalAlignment='Center'\n"
         "$message=New-Object System.Windows.Controls.TextBlock\n"
         f"$message.Text='{escape_powershell(message)}'\n"
         f"$message.Foreground='{TEXT_COLOR}'\n"
-        "$message.FontSize=12\n"
-        "$message.Margin='0,6,0,0'\n"
+        f"$message.FontSize={MESSAGE_FONT_SIZE}\n"
+        f"$message.Margin='0,{MESSAGE_SPACING},0,0'\n"
         "$message.TextAlignment='Center'\n"
         "$message.TextWrapping='Wrap'\n"
-        "$message.MaxWidth=420\n"
-        "$message.MaxHeight=68\n"
+        f"$message.MaxWidth={MAX_TEXT_WIDTH}\n"
+        f"$message.MaxHeight={MESSAGE_MAX_HEIGHT}\n"
         "$message.HorizontalAlignment='Center'\n"
         "$panel.Children.Add($title) | Out-Null\n"
         "$panel.Children.Add($message) | Out-Null\n"

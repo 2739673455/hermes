@@ -900,8 +900,8 @@ Gateway 常用挂载点：
 | `agent:start` / `agent:step` / `agent:end`        | Gateway 中 Agent 处理消息的过程 | 监控长任务、记录工具循环       |
 | `command:*` / `command:<name>`                    | Gateway 里执行斜杠命令时        | 命令审计、权限统计、外部通知   |
 
-## 8.4 Shell Hook 示例：每次对话结束后弹窗提示
-当一次对话结束后，`on_session_end` 会触发脚本，弹窗提示。
+## 8.4 Shell Hook 示例：对话结束或请求审批时弹窗提示
+当一次对话结束后，`on_session_end` 会触发脚本；当危险命令需要用户审批时，`pre_approval_request` 会触发脚本。
 
 1. 创建脚本目录并复制脚本：
 
@@ -920,14 +920,18 @@ chmod +x ~/.hermes/agent-hooks/conversation-end-popup.py
 # ~/.hermes/config.yaml
 hooks:
   on_session_end:
-    - command: "~/.hermes/agent-hooks/conversation-end-popup.py"
+    - command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 完成"
+      timeout: 15
+  pre_approval_request:
+    - command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 请求批准"
       timeout: 15
 ```
 
 3. 测试脚本：
 
 ```bash
-printf '{}' | ~/.hermes/agent-hooks/conversation-end-popup.py
+printf '{}' | ~/.hermes/agent-hooks/conversation-end-popup.py --message 完成
+printf '{}' | ~/.hermes/agent-hooks/conversation-end-popup.py --message 请求批准
 ```
 
 首次运行时 Hermes 会询问是否允许这个 `(event, command)` 组合。

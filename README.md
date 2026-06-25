@@ -1047,11 +1047,12 @@ memory:
 ## 10.2 Memory 工具操作
 Agent 通过 `memory` 工具管理记忆，常用动作：
 
-| 动作      | 用途                       |
-| --------- | -------------------------- |
-| `add`     | 添加新的记忆条目           |
-| `replace` | 替换已有条目，使用子串匹配 |
-| `remove`  | 删除已有条目，使用子串匹配 |
+| 动作         | 用途                                                          |
+| ------------ | ------------------------------------------------------------- |
+| `add`        | 添加新的记忆条目                                              |
+| `replace`    | 替换已有条目，使用子串匹配                                    |
+| `remove`     | 删除已有条目，使用子串匹配                                    |
+| `operations` | 原子批量操作，单次调用可批量执行 `add`、`replace` 和 `remove` |
 
 没有 `read` 动作。记忆内容会自动注入系统提示词，Agent 在会话能直接看到。
 
@@ -2618,3 +2619,55 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - 来源汇总
 - 风险说明
 - 版本信息
+
+## 17.11 Profile 与 Skill 配置
+### `research-orchestrator`
+- Profile 创建与工具配置：
+```bash
+hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务图维护、返工调度和交付汇总"
+research-orchestrator config set toolsets '["kanban"]'
+mkdir -p ~/.hermes/profiles/research-orchestrator/skills
+cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/
+```
+
+### `search-worker`
+- Profile 创建与工具配置：
+```bash
+hermes profile create search-worker --clone --description "资料研究员：负责按章节目标执行检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录"
+mkdir -p ~/.hermes/profiles/search-worker/skills
+cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/skills/
+```
+- MCP：`internal_knowledge`、`research_database`、`external_api`
+- MCP 配置位置：`~/.hermes/profiles/search-worker/config.yaml` 的 `mcp_servers`
+
+### `section-writer`
+- Profile 创建与工具配置：
+```bash
+hermes profile create section-writer --clone --description "专题撰稿编辑：负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明"
+mkdir -p ~/.hermes/profiles/section-writer/skills
+cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer/skills/
+```
+
+### `quality-reviewer`
+- Profile 创建与工具配置：
+```bash
+hermes profile create quality-reviewer --clone --description "事实核查编辑：负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议"
+mkdir -p ~/.hermes/profiles/quality-reviewer/skills
+cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-reviewer/skills/
+```
+
+### `synthesis-writer`
+- Profile 创建与工具配置：
+```bash
+hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源去重、全局风险整理和结构化研究结果组装"
+mkdir -p ~/.hermes/profiles/synthesis-writer/skills
+cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/
+```
+
+### `report-renderer`
+- Profile 创建与工具配置：
+```bash
+hermes profile create report-renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
+mkdir -p ~/.hermes/profiles/report-renderer/skills
+cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer/skills/
+```

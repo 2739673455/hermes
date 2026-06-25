@@ -2033,7 +2033,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 交付：基于结构化研究结果生成 HTML
 
 ## 17.2 角色规划
-- `research-orchestrator`：接收需求、确认研究边界、生成研究方案、拆分任务、协调返工、汇总
+- `research-orchestrator`：接收需求、确认研究边界、生成研究方案、拆分任务、协调返工、交付汇总
 - `search-worker`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
 - `section-writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
 - `quality-reviewer`：章节校验、结果校验、证据引用检查、未完成内容检查和返工建议
@@ -2047,7 +2047,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 4. 用户确认或修改研究方案。
 5. `research-orchestrator` 拆解搜索与证据整理、章节写作、质量校验、综合和渲染任务。
 6. 每个章节按搜索与证据整理、章节写作、章节校验的顺序执行。
-7. 所有章节校验通过后，进入综合、全局来源去重、`ResearchResult` 组装、结果校验和报告渲染。
+7. 所有章节校验通过后，进入综合、全局来源去重、`result/research_result.json` 组装、结果校验和报告渲染。
 8. 任一非编排角色发现需要调整或扩展任务时，都向 `research-orchestrator` 反馈触发原因、待回答问题和建议动作。
 9. `research-orchestrator` 判断是否追加搜索与证据整理、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
 
@@ -2080,10 +2080,10 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
   +---------------------------+
   |
   v
-任务：综合研究结果并组装 ResearchResult
+任务：综合研究结果并组装 result/research_result.json
   |
   v
-任务：校验 ResearchResult
+任务：校验 result/research_result.json
   |
   v
 任务：渲染报告
@@ -2096,12 +2096,12 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 
 创建 root task 时可以通过 `--workspace dir:<path>` 指定项目总目录；未指定 `dir:<path>` 时使用 `$HOME/.hermes/workspaces/deepresearch`。
 
-每个研究项目在项目总目录下创建目录 `<deepresearch_workspace>/<project_id>/`，`project_id` 使用 `dr-YYYYMMDD-HHMMSS-<slug>` 格式。`slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符。
+每个研究项目在项目总目录下创建目录 `$HOME/.hermes/workspaces/deepresearch/<project_id>/`，`project_id` 使用 `dr-YYYYMMDD-HHMMSS-<slug>` 格式。`slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符。
 
 workspace 结构：
 
 ```text
-<deepresearch_workspace>/<project_id>/
+$HOME/.hermes/workspaces/deepresearch/<project_id>/
   project.json                  # 项目编号、根任务编号、workspace 路径、当前研究业务阶段和当前报告版本
   scheme.json                   # 研究方案
   sections/
@@ -2113,7 +2113,7 @@ workspace 结构：
     synthesis.json              # 执行摘要、核心结论、跨章节洞察、建议和全局风险
   result/
     research_result.json        # 报告渲染前的完整结构化研究结果
-    validation.json             # ResearchResult 校验结果
+    validation.json             # research_result.json 校验结果
   reports/
     index.json                  # 报告版本索引、当前版本编号和版本说明
     current.html                # 当前 HTML 报告
@@ -2122,60 +2122,78 @@ workspace 结构：
 ```
 
 ## 17.5 `research-orchestrator`
-`research-orchestrator` 负责研究项目的入口、边界确认、方案生成、任务拆解、进度协调和返工调度。
+### 职责
+- 负责研究项目入口、边界确认、方案生成、Kanban 任务图维护、返工调度和交付汇总
 
-- Toolsets：`file`,`kanban`
+### 依赖
+- Toolsets：`file`、`kanban`
 - Plugins：无
 - MCP：无
 - Skills：`deepresearch-orchestrator`
 - Hooks：无
 
-研究准备阶段：
+### 阶段
+- 研究准备
+  - 输入：用户研究需求、已有上下文、用户补充边界
+  - 输出：`project.json`、`scheme.json`
+  - 步骤：
+    - 接收研究需求
+    - 确认必要研究边界
+    - 生成 `project.json`
+    - 生成 `scheme.json`
+  - 执行规则：
+    - 只确认会影响研究方案的边界
+    - 用户明确不限定的边界不得反复追问
+    - 研究方案确认前不得启动搜索与证据整理任务
+    - 人工确认和范围变更写入 Kanban 评论或事件
+- 任务编排
+  - 输入：`scheme.json`、Kanban 任务状态、章节校验结果、结果校验结果
+  - 输出：Kanban 任务图、搜索与证据整理任务、章节写作任务、章节校验任务、综合任务、结果校验任务、报告渲染任务及依赖关系
+  - 步骤：
+    - 读取 `scheme.json`
+    - 生成 Kanban 任务图
+    - 创建章节搜索与证据整理任务
+    - 创建章节写作任务
+    - 创建章节校验任务
+    - 创建综合、结果校验和报告渲染任务
+  - 执行规则：
+    - 任务拆解必须包含章节编号、负责角色、输入路径、输出路径、依赖关系和验收条件
+    - 只创建和维护任务，不直接执行检索、写作、综合、校验或渲染
+- 返工协调
+  - 输入：非编排角色反馈、校验失败结果、用户补充信息
+  - 输出：重跑任务、用户确认请求、阻塞说明
+  - 步骤：
+    - 读取反馈和校验失败结果
+    - 判断是否需要用户确认
+    - 创建返工任务或用户确认请求
+    - 更新受影响的 Kanban 任务
+  - 执行规则：
+    - 反馈必须使用统一反馈格式
+    - 需要用户判断时阻塞相关任务
+    - 不需要用户判断时，只创建能修复当前失败点的返工任务
+    - 范围变更必须更新 `scheme.json` 和受影响的 Kanban 任务
+- 交付完成
+  - 输入：`result/research_result.json`、`result/validation.json`、`reports/index.json`、未解决阻塞
+  - 输出：根任务完成摘要、报告路径、版本记录路径、剩余风险
+  - 步骤：
+    - 检查结果校验状态
+    - 检查报告文件
+    - 检查版本记录
+    - 汇总剩余风险
+    - 完成根任务
+  - 执行规则：
+    - 结果校验未通过、报告未生成、版本记录缺失或存在未解决阻塞时，不得完成根任务
+    - 根任务完成摘要只汇总项目状态、报告路径、版本记录路径和剩余风险
 
-- 输入：用户研究需求、已有上下文、用户补充边界
-- 产出：项目 workspace、已确认的 `ResearchScheme`
-- 执行规则：只确认会影响研究方案的边界；用户明确不限定的边界不得反复追问；研究方案确认前不得启动搜索与证据整理任务；人工确认和范围变更写入 Kanban 评论或事件
-
-任务编排阶段：
-
-- 输入：已确认的 `ResearchScheme`、Kanban 任务状态、章节校验结果、结果校验结果
-- 产出：搜索与证据整理任务、章节写作任务、质量校验任务、综合任务、报告渲染任务及依赖关系
-- 执行规则：任务拆解必须包含章节编号、负责角色、输入路径、输出路径、依赖关系和验收条件
-
-返工协调阶段：
-
-- 输入：非编排角色反馈、校验失败结果、用户补充信息
-- 产出：重跑任务、用户确认请求、阻塞说明
-- 执行规则：需要用户判断时阻塞相关任务；不需要用户判断时，只创建能修复当前失败点的返工任务
-
-交付完成阶段：
-
-- 输入：`ResearchResult`、结果 `ValidationResult`、`ReportVersion`、未解决阻塞
-- 产出：根任务完成摘要、报告路径、版本记录路径、剩余风险
-- 执行规则：结果校验未通过、报告未生成、版本记录缺失或存在未解决阻塞时，不得完成根任务
-
-子任务契约：
-
-- `project_id`：研究项目编号
-- `section_id`：章节编号，仅章节任务需要
+### 文件格式
+`project.json` 字段：
+- `project_id`：研究项目编号，格式为 `dr-YYYYMMDD-HHMMSS-<slug>`
+- `root_task_id`：根任务编号
 - `workspace_path`：项目 workspace 路径
-- `assignee`：负责执行的 profile
-- `inputs`：输入文件或目录
-- `outputs`：输出文件或目录
-- `objective`：任务目标
-- `constraints`：执行约束
-- `acceptance_criteria`：验收条件
+- `stage`：当前研究业务阶段，取值为 `preparing`、`orchestrating`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`completed`、`blocked`
+- `current_report_version`：当前报告版本，取值为 `null` 或 `vNNN`
 
-反馈格式：
-
-- `reason`：触发原因
-- `affected_section_ids`：影响章节
-- `question_to_answer`：待回答问题
-- `suggested_action`：建议动作
-- `required_user_input`：是否需要用户确认
-
-`ResearchScheme` 字段：
-
+`scheme.json` 字段：
 - `research_goal`：研究目标和最终需要回答的问题
 - `key_questions`：必须回答的关键问题
 - `scope`：研究边界与约束，包括研究范围、排除项和口径限制
@@ -2184,82 +2202,419 @@ workspace 结构：
 - `search_strategy`：检索方法与来源筛选标准，包括检索方向、搜索范围、来源类型优先级、可信度与时效性要求
 - `known_sources`：已知要查阅的具体数据库、文档、平台或内部知识库清单
 - `outline`：章节结构、章节目标和章节证据要求
+  - `section_id`：章节编号，格式为 `sNNN`
+  - `title`：章节标题
+  - `objective`：章节目标
+  - `key_questions`：本章必须回答的关键问题
+  - `evidence_requirements`：本章证据要求
+  - `required`：是否为必需章节，取值为 `true` 或 `false`
 - `deliverables`：最终交付内容，包括 HTML 报告、执行摘要、表格、图表和数据附录
 - `acceptance_criteria`：验收标准，包括问题覆盖、证据链完整性、引用有效性和格式要求
 - `risk_boundary`：输出结论时必须说明的限制、不确定性和适用边界
 
-## 17.6 `search-worker`
-`search-worker` 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，并完成来源评估、事实抽取、冲突识别和证据链整理。
+### 子任务契约
+- `project_id`：研究项目编号
+- `section_id`：章节编号，仅章节任务需要，格式为 `sNNN`
+- `workspace_path`：项目 workspace 路径
+- `task_type`：任务类型，取值为 `search`、`section_write`、`section_review`、`synthesis`、`result_review`、`report_render`、`user_confirm`、`rework`
+- `assignee`：负责执行的 profile
+- `inputs`：输入文件或目录，使用项目 workspace 内相对路径
+- `outputs`：输出文件或目录，使用项目 workspace 内相对路径
+- `dependencies`：前置任务编号
+- `objective`：任务目标
+- `constraints`：执行约束
+- `acceptance_criteria`：验收条件
 
+### 反馈格式
+- `reason`：触发原因
+- `affected_section_ids`：影响章节
+- `question_to_answer`：待回答问题
+- `suggested_action`：建议动作
+- `required_user_input`：是否需要用户确认，取值为 `true` 或 `false`
+
+## 17.6 `search-worker`
+### 职责
+- 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，并完成来源评估、事实抽取、冲突识别和证据链整理
+
+### 依赖
 - Toolsets：`web`、`browser`、`file`
 - Plugins：无
 - MCP：内部知识库、数据库、外部 API
 - Skills：`deepresearch-search`
 - Hooks：无
-- 来源优先级：官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容；内部知识库不伪装成公开来源
-- 任务输入：`ResearchScheme`、`section_id`、`workspace_path`
-- 任务产出：保存到章节目录的 `research.json`
-- 内部阶段：读取 `ResearchScheme.outline` 中对应章节；生成章节搜索计划；执行检索和网页读取；评估来源并抽取事实；整理证据链、冲突和风险；必要时反馈证据缺口
-- 执行规则：章节目标和证据要求通过 `section_id` 从 `ResearchScheme.outline` 读取；搜索计划必须遵守 `ResearchScheme.scope`、`ResearchScheme.search_strategy`、`ResearchScheme.known_sources` 和章节证据要求；`research.json` 包含候选来源、可引用来源、来源评估、事实卡片、证据链、冲突信息和风险说明；候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息；公开网页候选来源必须记录最终 URL；内部知识库候选来源必须记录数据集和片段定位；可引用来源必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要；来源评估必须记录可信度、相关性、时效性、偏差风险和可用事实；事实卡片只保存可复核事实，不保存大段原文；不得用低可信来源填补关键证据缺口；检索或证据不足时通过 Kanban 评论反馈缺口
+
+### 阶段
+- 搜索与证据整理
+  - 输入：`scheme.json`、`section_id`、`workspace_path`
+  - 输出：`sections/<section_id>/research.json`
+  - 步骤：
+    - 读取 `scheme.json` 的 `outline` 中对应章节
+    - 生成章节搜索计划
+    - 执行检索和网页读取
+    - 评估来源并抽取事实
+    - 整理证据链、冲突和风险
+    - 必要时反馈证据缺口
+  - 执行规则：
+    - 章节目标和证据要求通过 `section_id` 从 `scheme.json` 的 `outline` 读取
+    - 搜索计划必须遵守 `scheme.json` 的 `scope`、`search_strategy`、`known_sources` 和章节证据要求
+    - `sections/<section_id>/research.json` 包含候选来源、可引用来源、来源评估、可复核事实、证据链、冲突信息和风险说明
+    - 候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息
+    - 公开网页候选来源必须记录最终 URL
+    - 内部知识库候选来源必须记录数据集和片段定位
+    - 可引用来源必须包含项目内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要
+    - 来源评估必须记录可信度、相关性、时效性、偏差风险和可用事实
+    - 可复核事实不保存大段原文
+    - 不得用低可信来源填补关键证据缺口
+    - 检索或证据不足时通过 Kanban 评论反馈缺口
+
+### 文件格式
+`sections/<section_id>/research.json` 字段：
+- `section_id`：章节编号，格式为 `sNNN`
+- `search_plan`：章节搜索计划
+  - `queries`：检索词
+  - `source_types`：目标来源类型，取值同 `sources.source_type`
+  - `constraints`：检索约束
+- `candidate_sources`：候选来源
+  - `candidate_source_id`：候选来源编号，格式为 `cand-<section_id>-NNN`
+  - `retrieval_channel`：检索渠道，取值为 `web`、`specified_site`、`uploaded_file`、`internal_knowledge`、`database`、`api`
+  - `title`：原始标题
+  - `url`：公开网页最终 URL
+  - `document_id`：上传文件、内部知识库、数据库或外部 API 文档编号
+  - `locator`：上传文件、内部知识库、数据库或外部 API 的片段定位信息
+  - `snippet`：摘要片段
+  - `retrieved_at`：召回时间，使用 ISO 8601 字符串
+- `sources`：可引用来源
+  - `source_id`：来源编号，格式为 `src-NNNN`
+  - `title`：标题
+  - `url`：公开网页最终 URL
+  - `document_id`：上传文件、内部知识库、数据库或外部 API 文档编号
+  - `locator`：上传文件、内部知识库、数据库或外部 API 的片段定位信息
+  - `published_at`：发布时间，使用 ISO 8601 字符串或 `null`
+  - `source_type`：来源类型，取值为 `official`、`primary_data`、`paper`、`industry_report`、`mainstream_media`、`company_site`、`secondary_repost`、`social_media`、`uploaded_file`、`internal_knowledge`、`database`、`api`
+  - `summary`：摘要
+- `source_evaluations`：来源评估
+  - `source_id`：来源编号
+  - `credibility`：可信度，取值为 `high`、`medium`、`low`、`unknown`
+  - `relevance`：相关性，取值为 `high`、`medium`、`low`、`unknown`
+  - `recency`：时效性，取值为 `high`、`medium`、`low`、`unknown`
+  - `bias_risk`：偏差风险，取值为 `high`、`medium`、`low`、`unknown`
+  - `usable_fact_ids`：可用事实编号
+- `facts`：可复核事实
+  - `fact_id`：事实编号，格式为 `fact-<section_id>-NNN`
+  - `text`：可复核事实内容
+  - `source_ids`：来源编号
+  - `evidence_chain_ids`：证据链编号
+- `evidence_chains`：证据链
+  - `evidence_chain_id`：证据链编号，格式为 `ev-<section_id>-NNN`
+  - `claim`：关键判断
+  - `fact_ids`：事实编号
+  - `source_ids`：来源编号
+- `conflicts`：冲突信息
+  - `conflict_id`：冲突编号
+  - `description`：冲突说明
+  - `source_ids`：来源编号
+- `risks`：风险说明
+  - `risk_id`：风险编号
+  - `description`：风险说明
+  - `applies_to`：适用对象
+- `gaps`：证据缺口
+  - `gap_id`：缺口编号
+  - `description`：缺口说明
+  - `required_evidence`：所需证据
+
+### 来源规则
+- 来源优先级：官方文件、一手数据、学术论文、行业报告、主流媒体、公司官网、二手转载、社媒内容
+- 内部知识库不伪装成公开来源
 
 ## 17.7 `section-writer`
-`section-writer` 负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明。
+### 职责
+- 负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明
 
+### 依赖
 - Toolsets：`file`
 - Plugins：无
 - MCP：无
 - Skills：`deepresearch-section`
 - Hooks：无
-- 任务输入：`ResearchScheme`、`section_id`、`workspace_path`、当前章节的 `research.json`
-- 任务产出：`ResearchSection`、保存到章节目录的 `section.json`
-- 内部阶段：读取 `ResearchScheme.outline` 中对应章节；整理章节写作要点和关键发现候选；写作章节正文、表格、图表说明和章节风险说明；保存 `section.json`
-- 执行规则：写作要点必须对应已确认大纲节点；不得把未验证信息列为关键发现；每条关键判断必须关联 `EvidenceChain`；`EvidenceChain.source_ids` 必须能对应到 `Source.source_id`；章节正文不得新增无来源事实；章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界；未完成内容不得进入 `section.json`
+
+### 阶段
+- 章节写作
+  - 输入：`scheme.json`、`section_id`、`workspace_path`、当前章节的 `sections/<section_id>/research.json`
+  - 输出：`sections/<section_id>/section.json`
+  - 步骤：
+    - 读取 `scheme.json` 的 `outline` 中对应章节
+    - 整理章节写作要点和关键发现候选
+    - 写作章节正文、表格、图表说明和章节风险说明
+    - 保存 `sections/<section_id>/section.json`
+  - 执行规则：
+    - 写作要点必须对应已确认大纲节点
+    - 不得把未验证信息列为关键发现
+    - 每条关键判断必须关联 `evidence_chains`
+    - 正文段落、表格和图表必须分别记录 `source_ids`
+    - `evidence_chains.source_ids` 必须能对应到 `sources.source_id`
+    - 章节正文不得新增无来源事实
+    - 章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界
+    - 未完成内容不得进入 `sections/<section_id>/section.json`
+
+### 文件格式
+`sections/<section_id>/section.json` 字段：
+- `section_id`：章节编号，格式为 `sNNN`
+- `title`：章节标题
+- `objective`：章节目标
+- `key_findings`：关键发现
+  - `finding_id`：关键发现编号
+  - `text`：关键发现内容
+  - `evidence_chain_ids`：证据链编号
+  - `source_ids`：来源编号
+- `body`：章节正文段落
+  - `block_id`：正文段落编号
+  - `heading`：段落小标题
+  - `text`：段落正文
+  - `evidence_chain_ids`：证据链编号
+  - `source_ids`：来源编号
+- `tables`：表格
+  - `title`：表格标题
+  - `columns`：列名
+  - `rows`：行数据
+  - `source_ids`：来源编号
+- `charts`：图表说明
+  - `title`：图表标题
+  - `chart_type`：图表类型，取值为 `bar`、`line`、`pie`、`scatter`、`area`、`other`
+  - `description`：图表说明
+  - `data`：图表数据
+  - `source_ids`：来源编号
+- `evidence_chains`：章节证据链
+  - `evidence_chain_id`：证据链编号
+  - `claim`：关键判断
+  - `fact_ids`：事实编号
+  - `source_ids`：来源编号
+- `risks`：章节风险说明
+  - `risk_id`：风险编号
+  - `description`：风险说明
+  - `applies_to`：适用对象
+- `source_ids`：章节引用来源编号
 
 ## 17.8 `quality-reviewer`
-`quality-reviewer` 负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议。
+### 职责
+- 负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议
 
+### 依赖
 - Toolsets：`file`
 - Plugins：无
 - MCP：无
 - Skills：`deepresearch-quality`
 - Hooks：无
 
-章节校验任务：
+### 阶段
+- 章节校验
+  - 输入：`scheme.json`、`section_id`、`workspace_path`、当前章节的 `sections/<section_id>/research.json`、`sections/<section_id>/section.json`
+  - 输出：`sections/<section_id>/validation.json`
+  - 步骤：
+    - 检查章节是否对应已确认大纲节点
+    - 检查正文、关键发现和证据链完整性
+    - 检查 `source_id`、公开来源 URL 和内部知识库来源类型
+    - 生成校验结果和返工反馈
+  - 执行规则：
+    - 章节正文不能为空
+    - 每章至少包含一条关键发现和一条证据链
+    - 证据链引用的 `source_id` 必须存在
+    - 公开来源必须提供 HTTP URL
+    - 内部知识库来源必须标记来源类型
+    - 校验失败时通过 Kanban 评论记录返工反馈
+    - 返工反馈必须能指向具体失败点
+- 结果校验
+  - 输入：`scheme.json`、`workspace_path`、全部章节校验结果、`synthesis/synthesis.json`、`result/research_result.json`、全局来源列表、全局证据链
+  - 输出：`result/validation.json`
+  - 步骤：
+    - 检查所有章节校验是否通过
+    - 检查全局来源列表是否去重
+    - 检查事实、洞察、建议和章节风险说明是否与章节证据链一致
+    - 检查报告渲染输入是否存在未完成内容或占位符
+    - 生成校验结果和返工反馈
+  - 执行规则：
+    - 所有需要正文的章节都已保存
+    - 所有章节校验已通过
+    - 报告渲染输入不包含未完成内容或占位符
+    - 校验失败时通过 Kanban 评论记录返工反馈
+    - 返工反馈必须能指向具体失败点
 
-- 任务输入：`ResearchScheme`、`section_id`、`workspace_path`、当前章节的 `research.json`、`ResearchSection`
-- 任务产出：章节 `ValidationResult`、保存到章节目录的 `validation.json`
-- 内部阶段：检查章节是否对应已确认大纲节点；检查正文、关键发现和证据链完整性；检查 `source_id`、公开来源 URL 和内部知识库来源类型；生成校验结果和返工反馈
-- 执行规则：章节正文不能为空；每章至少包含一条关键发现和一条证据链；证据链引用的 `source_id` 必须存在；公开来源必须提供 HTTP URL；内部知识库来源必须标记来源类型；校验失败时通过 Kanban 评论记录触发原因、影响章节、待回答问题、建议动作和是否需要用户确认
+### 文件格式
+`sections/<section_id>/validation.json` 字段：
+- `section_id`：章节编号，格式为 `sNNN`
+- `status`：校验状态，取值为 `passed`、`failed`、`blocked`
+- `checks`：校验项结果
+  - `name`：校验项名称
+  - `status`：校验项状态，取值为 `passed`、`failed`、`skipped`
+  - `message`：校验说明
+- `issues`：问题列表
+  - `issue_id`：问题编号，格式为 `issue-NNNN`
+  - `severity`：严重程度，取值为 `info`、`warning`、`error`、`blocker`
+  - `path`：问题位置
+  - `message`：问题说明
+- `missing_items`：缺失内容
+- `feedback`：返工反馈
+  - `reason`：触发原因
+  - `affected_section_ids`：影响章节
+  - `question_to_answer`：待回答问题
+  - `suggested_action`：建议动作
+  - `required_user_input`：是否需要用户确认，取值为 `true` 或 `false`
+- `required_user_input`：是否需要用户确认，取值为 `true` 或 `false`
 
-结果校验任务：
-
-- 任务输入：`ResearchScheme`、`workspace_path`、全部章节校验结果、`ResearchSynthesis`、`ResearchResult`、全局来源列表、全局证据链
-- 任务产出：结果 `ValidationResult`、保存到结果目录的 `validation.json`
-- 内部阶段：检查所有章节校验是否通过；检查全局来源列表是否去重；检查事实、洞察、建议和章节风险说明是否与章节证据链一致；检查报告渲染输入是否存在未完成内容或占位符；生成校验结果和返工反馈
-- 执行规则：所有需要正文的章节都已保存；所有章节校验已通过；报告渲染输入不包含未完成内容或占位符；校验失败时通过 Kanban 评论记录返工反馈；返工反馈必须能指向具体失败点
+`result/validation.json` 字段：
+- `status`：校验状态，取值为 `passed`、`failed`、`blocked`
+- `checks`：校验项结果
+  - `name`：校验项名称
+  - `status`：校验项状态，取值为 `passed`、`failed`、`skipped`
+  - `message`：校验说明
+- `issues`：问题列表
+  - `issue_id`：问题编号，格式为 `issue-NNNN`
+  - `severity`：严重程度，取值为 `info`、`warning`、`error`、`blocker`
+  - `path`：问题位置
+  - `message`：问题说明
+- `affected_section_ids`：受影响章节编号
+- `feedback`：返工反馈
+  - `reason`：触发原因
+  - `affected_section_ids`：影响章节
+  - `question_to_answer`：待回答问题
+  - `suggested_action`：建议动作
+  - `required_user_input`：是否需要用户确认，取值为 `true` 或 `false`
+- `required_user_input`：是否需要用户确认，取值为 `true` 或 `false`
 
 ## 17.9 `synthesis-writer`
-`synthesis-writer` 负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，完成全局来源去重，并把所有章节、来源、证据和综合结果组装为 `ResearchResult`。
+### 职责
+- 负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，完成全局来源去重，并把所有章节、来源、证据和综合结果组装为 `result/research_result.json`
 
+### 依赖
 - Toolsets：`file`
 - Plugins：无
 - MCP：无
 - Skills：`deepresearch-synthesis`
 - Hooks：无
-- 任务输入：`ResearchScheme`、`workspace_path`、全部章节的 `research.json`、`ResearchSection` 和章节校验结果
-- 任务产出：`ResearchSynthesis`、`ResearchResult`
-- 内部阶段：构建跨章节事实索引、冲突清单和风险清单；生成执行摘要、核心结论、跨章节洞察和建议；完成全局来源去重；组装 `ResearchResult`
-- 执行规则：只使用已保存的章节、来源、事实和证据链；综合结论必须能回溯到章节证据链；建议必须包含适用条件和风险前提；跨章节冲突必须保留冲突说明；全局风险写入 `ResearchSynthesis`；`ResearchResult` 只能组装已存在的章节、来源、证据和综合结果；全局来源列表必须去重；不得新增事实、来源、判断或证据链
+
+### 阶段
+- 综合与组装
+  - 输入：`scheme.json`、`workspace_path`、全部章节的 `sections/<section_id>/research.json`、`sections/<section_id>/section.json` 和章节校验结果
+  - 输出：`synthesis/synthesis.json`、`result/research_result.json`
+  - 步骤：
+    - 构建跨章节事实索引、冲突清单和风险清单
+    - 生成执行摘要、核心结论、跨章节洞察和建议
+    - 完成全局来源去重
+    - 组装 `result/research_result.json`
+  - 执行规则：
+    - 只使用已保存的章节、来源、事实和证据链
+    - 综合结论必须能回溯到章节证据链
+    - 建议必须包含适用条件和风险前提
+    - 跨章节冲突必须保留冲突说明
+    - 全局风险写入 `synthesis/synthesis.json`
+    - `result/research_result.json` 只能组装已存在的章节、来源、证据和综合结果
+    - 全局来源列表必须去重
+    - 不得新增事实、来源、判断或证据链
+
+### 文件格式
+`synthesis/synthesis.json` 字段：
+- `executive_summary`：执行摘要
+- `core_conclusions`：核心结论
+  - `conclusion_id`：核心结论编号
+  - `text`：核心结论内容
+  - `evidence_chain_ids`：证据链编号
+  - `source_ids`：来源编号
+- `cross_section_insights`：跨章节洞察
+  - `insight_id`：洞察编号
+  - `text`：洞察内容
+  - `section_ids`：关联章节编号
+  - `evidence_chain_ids`：证据链编号
+  - `source_ids`：来源编号
+- `recommendations`：建议
+  - `recommendation_id`：建议编号
+  - `text`：建议内容
+  - `conditions`：适用条件
+  - `risks`：风险前提
+  - `evidence_chain_ids`：证据链编号
+  - `source_ids`：来源编号
+- `conflicts`：跨章节冲突
+  - `conflict_id`：冲突编号
+  - `description`：冲突说明
+  - `source_ids`：来源编号
+- `global_risks`：全局风险
+  - `risk_id`：风险编号
+  - `description`：风险说明
+  - `applies_to`：适用对象
+
+`result/research_result.json` 字段：
+- `project_id`：研究项目编号
+- `scheme`：研究方案
+- `sections`：章节结果，字段结构同 `sections/<section_id>/section.json`
+- `synthesis`：综合结果
+- `facts`：全局可复核事实
+  - `fact_id`：事实编号，格式为 `fact-<section_id>-NNN`
+  - `text`：可复核事实内容
+  - `source_ids`：来源编号
+  - `evidence_chain_ids`：证据链编号
+- `sources`：全局来源列表
+  - `source_id`：来源编号
+  - `title`：标题
+  - `url`：公开网页最终 URL
+  - `document_id`：上传文件、内部知识库、数据库或外部 API 文档编号
+  - `locator`：上传文件、内部知识库、数据库或外部 API 的片段定位信息
+  - `published_at`：发布时间，使用 ISO 8601 字符串或 `null`
+  - `source_type`：来源类型，取值为 `official`、`primary_data`、`paper`、`industry_report`、`mainstream_media`、`company_site`、`secondary_repost`、`social_media`、`uploaded_file`、`internal_knowledge`、`database`、`api`
+  - `summary`：摘要
+- `evidence_chains`：全局证据链
+  - `evidence_chain_id`：证据链编号
+  - `claim`：关键判断
+  - `fact_ids`：事实编号
+  - `source_ids`：来源编号
+- `risks`：全局风险
+  - `risk_id`：风险编号
+  - `description`：风险说明
+  - `applies_to`：适用对象
+- `deliverables`：交付内容
 
 ## 17.10 `report-renderer`
-`report-renderer` 负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录。
+### 职责
+- 负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录
 
+### 依赖
 - Toolsets：`file`
 - Plugins：无
 - MCP：无
 - Skills：`deepresearch-report`
 - Hooks：无
-- 任务输入：`ResearchResult`、结果 `ValidationResult`、`workspace_path`
-- 任务产出：HTML 报告、`ReportVersion`
-- 内部阶段：检查结果校验状态；生成可渲染报告数据；确定性生成 HTML；写入报告版本记录
-- 执行规则：结果校验通过后才能渲染；报告数据不得包含未完成内容或占位符；报告渲染阶段不得新增事实、来源、判断或证据链；报告必须包含执行摘要、正文、表格或图表、来源列表、风险说明和版本信息；`ReportVersion` 必须记录报告格式、来源列表、生成时间和存储地址
+
+### 阶段
+- 报告渲染
+  - 输入：`result/research_result.json`、`result/validation.json`、`workspace_path`
+  - 输出：`reports/current.html`、`reports/vNNN.html`、`reports/index.json`、更新后的 `project.json.current_report_version`
+  - 步骤：
+    - 检查结果校验状态
+    - 生成可渲染报告数据
+    - 确定性生成 HTML
+    - 写入报告版本记录
+    - 更新 `project.json.current_report_version`
+  - 执行规则：
+    - 结果校验通过后才能渲染
+    - 报告数据不得包含未完成内容或占位符
+    - 报告渲染阶段不得新增事实、来源、判断或证据链
+    - 正文、表格和图表必须附相关来源链接
+    - 报告必须包含执行摘要、正文、表格或图表、来源汇总、风险说明和版本信息
+    - `reports/index.json` 必须记录报告格式、引用来源编号、生成时间和存储地址
+
+### 文件格式
+`reports/index.json` 字段：
+- `current_version`：当前版本编号，格式为 `vNNN`
+- `versions`：报告版本列表
+  - `version`：版本编号，格式为 `vNNN`
+  - `file_path`：报告文件路径
+  - `format`：报告格式，取值为 `html`
+  - `source_ids`：报告引用来源编号
+  - `generated_at`：生成时间，使用 ISO 8601 字符串
+  - `note`：版本说明
+
+`reports/current.html` 和 `reports/vNNN.html` 内容：
+- 执行摘要
+- 正文
+- 表格或图表
+- 正文、表格和图表后的相关来源链接
+- 来源汇总
+- 风险说明
+- 版本信息

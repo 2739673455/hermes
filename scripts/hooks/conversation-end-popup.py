@@ -12,7 +12,7 @@ from pathlib import Path
 TITLE = "Hermes"
 MESSAGE = "完成"
 DURATION = 4.0
-BACKGROUND_COLOR = "#F52B2B2B"
+BACKGROUND_COLOR = "#DC2B2B2B"
 TEXT_COLOR = "#F2F5F7"
 DISPLAY_ENV = "HERMES_POPUP_DISPLAY"
 MIN_WIDTH = 180
@@ -26,6 +26,8 @@ MESSAGE_FONT_SIZE = 12
 MESSAGE_SPACING = 6
 TITLE_MAX_HEIGHT = 38
 MESSAGE_MAX_HEIGHT = 68
+TOP_CENTER_RATIO = 0.35
+TOP_MARGIN = 24
 
 
 def escape_powershell(value: str) -> str:
@@ -129,7 +131,7 @@ def show_windows_toast(title: str, message: str, duration: float) -> None:
         "$w.Focusable=$false\n"
         "$w.ShowInTaskbar=$false\n"
         "$w.SizeToContent='WidthAndHeight'\n"
-        "$w.WindowStartupLocation='CenterScreen'\n"
+        "$w.WindowStartupLocation='Manual'\n"
         "$w.Background='Transparent'\n"
         f"$w.MinWidth={MIN_WIDTH}\n"
         f"$w.MinHeight={MIN_HEIGHT}\n"
@@ -180,6 +182,12 @@ def show_windows_toast(title: str, message: str, duration: float) -> None:
         "  $style=[HermesToastWin32]::GetWindowLong($helper.Handle,[HermesToastWin32]::GWL_EXSTYLE)\n"
         "  $style=$style -bor [HermesToastWin32]::WS_EX_TOOLWINDOW -bor [HermesToastWin32]::WS_EX_NOACTIVATE\n"
         "  [HermesToastWin32]::SetWindowLong($helper.Handle,[HermesToastWin32]::GWL_EXSTYLE,$style) | Out-Null\n"
+        "})\n"
+        "$w.Add_ContentRendered({\n"
+        "  $workArea=[System.Windows.SystemParameters]::WorkArea\n"
+        "  $w.Left=$workArea.Left + (($workArea.Width - $w.ActualWidth) / 2)\n"
+        f"  $targetCenterY=$workArea.Top + ($workArea.Height * {TOP_CENTER_RATIO})\n"
+        f"  $w.Top=[Math]::Max($workArea.Top + {TOP_MARGIN}, $targetCenterY - ($w.ActualHeight / 2))\n"
         "})\n"
         "$w.Add_Closed({[System.Windows.Threading.Dispatcher]::CurrentDispatcher.InvokeShutdown()})\n"
         "$timer=New-Object System.Windows.Threading.DispatcherTimer\n"

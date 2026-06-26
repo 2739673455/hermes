@@ -2727,5 +2727,5 @@ cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer
 ```bash
 research-orchestrator chat --skills deepresearch-orchestrator
 
-请研究 2026 年 FIFA 男子世界杯，分析哪支队伍最有可能夺冠
+研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠
 ```

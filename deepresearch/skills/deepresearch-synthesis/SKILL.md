@@ -138,11 +138,12 @@ metadata:
 - 当你无法完成综合组装或判断需要补充输入时，输出统一反馈对象
 - 字段：
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
-- `reason` 和 `suggested_action` 必须指明缺失章节、断裂引用或无法判定的去重对象
+- `reason`、`help_needed` 和 `suggested_action` 必须指明缺失章节、断裂引用或无法判定的去重对象
 
 ## Handoff Rules
 - 任一必需章节未通过校验、缺少输入文件、全局引用断裂或无法确定 canonical 来源映射时，不得继续组装最终结果
@@ -154,7 +155,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
 
 ## Verification
 - 所有必需章节的章节校验均为通过状态

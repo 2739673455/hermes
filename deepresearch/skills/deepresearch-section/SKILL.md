@@ -116,23 +116,25 @@ metadata:
 - 当你无法完成章节写作或判断需要补充输入时，输出统一反馈对象
 - 字段：
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
-- `reason` 和 `suggested_action` 必须指明缺失证据对应的关键问题、失败段落或待补充字段
+- `reason`、`help_needed` 和 `suggested_action` 必须指明缺失证据对应的关键问题、失败段落或待补充字段
 
 ## Handoff Rules
 - `research.json` 缺失、章节不存在、关键问题缺少可写证据或证据链断裂时，不得编造正文
 - 能形成完整、可校验的 `section.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
 - 需要追加证据、追加检索、用户判断或上游修正时，整理统一反馈对象
 - 在 Kanban 任务上下文内：
+  - 不写入未完成的 `section.json`
   - 先记录反馈
   - 再阻塞当前任务
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
 
 ## Verification
 - `section_id` 存在于 `scheme.json.outline`

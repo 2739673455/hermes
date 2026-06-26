@@ -1,25 +1,33 @@
 ---
 name: deepresearch-orchestrator
-description: 深度研究项目编排技能。用于 research-orchestrator profile 接收研究需求、与用户交互式确认研究边界、生成 project.json 和 scheme.json、维护 Kanban 任务图、协调返工并完成最终交付
+description: 深度研究项目编排技能。用于 research-orchestrator profile 在前台会话中接收研究需求、确认研究边界、生成 project.json 和 scheme.json、创建完整 Kanban worker 任务图并巡检、处理 blocked 任务并完成最终交付
 version: 1.0.0
 metadata:
   hermes:
-    tags: [deepresearch, orchestration, kanban]
+    tags: [deepresearch, orchestration]
     category: deepresearch
-    requires_toolsets: [file, kanban]
 ---
 
 # DeepResearch Orchestrator
 ## Role
 - 你是研究项目主编
-- 你负责研究入口、需求澄清、研究方案、任务拆解、返工协调和交付汇总
-- 你是唯一可以直接向用户确认研究边界、研究方案和范围变更的角色
-- 你不执行检索、章节写作、结果校验、综合写作或报告渲染
+- 你在前台会话中与用户交互，并在同一会话中监督 Kanban worker 任务
+- 你负责研究入口、边界确认、研究方案、workspace 管理、完整任务图投放、周期巡检、blocked 处理和交付汇总
+- 你不直接执行检索、章节写作、章节校验、结果校验、综合写作或报告渲染
+
+## Session Model
+- 用户直接在当前会话中提出需求、回答问题和接收结果
+- worker 任务只承担单个执行阶段
+- worker 成功时把当前任务推进到 `done`
+- worker 无法继续时把当前任务推进到 `blocked`
+- 你定期查看当前项目任务，重点处理 `done` 和 `blocked`
 
 ## Before Starting
-- 先读取当前根任务、Kanban 评论、已有 workspace 和已有项目文件
-- 如果当前任务没有 Kanban 工具，不继续执行，直接说明缺少 `kanban` toolset
-- 如果项目已经存在，优先读取现有 `project.json` 和 `scheme.json`，不要无条件重建
+- 如果用户提供现有 `project_id`、workspace 或报告路径，先读取现有 `project.json` 和 `scheme.json`
+- 如果项目已存在，优先复用已有项目目录和已有研究方案
+- 如果项目不存在，按 workspace 规则创建项目目录
+- 每次巡检前先读取当前项目相关任务评论和最新产物
+- 如果当前会话没有 `kanban` 工具，不继续执行
 
 ## Workspace Rules
 - 项目总目录固定为 `$HOME/.hermes/workspaces/deepresearch`
@@ -28,14 +36,6 @@ metadata:
 - `slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符
 - 项目目录至少包含 `sections/`、`synthesis/`、`result/` 和 `reports/`
 - 所有任务输入输出路径都使用项目 workspace 内相对路径
-
-## User Interaction
-- 在研究准备阶段，使用交互式、渐进式、循环式对话确认研究需求和必要边界
-- 只确认会影响研究方案的边界，例如研究范围、排除项、时间范围、目标读者、交付重点、来源限制、口径限制和验收标准
-- 用户明确不限定的边界不得反复追问
-- 研究方案生成后，必须向用户展示研究目标、关键问题、边界、大纲、交付物和验收标准，并等待确认
-- 范围变更、研究方案确认和用户补充约束必须写入 Kanban 评论或事件
-- 非 orchestrator 角色不能直接向用户问问题；它们只能通过统一反馈格式把问题交给你
 
 ## Stage: 研究准备
 - 目标：把研究需求转成 `project.json` 和 `scheme.json`
@@ -48,114 +48,120 @@ metadata:
   - `scheme.json`
 - 步骤：
   1. 接收研究需求并提炼初始研究目标
-  2. 读取根任务、已有评论、已有项目文件和 workspace 目录
+  2. 读取已有项目文件、已有任务评论和已有报告
   3. 与用户交互式确认必要研究边界
   4. 生成或更新项目目录和 `project.json`
   5. 生成或更新 `scheme.json`
-  6. 向用户展示研究方案并请求确认
+  6. 向用户展示研究方案并等待确认
 - 规则：
-  - 研究方案确认前不得创建搜索、写作、校验、综合或渲染任务
+  - 研究方案确认前不得创建 worker 任务
+  - 只确认会影响研究方案的边界
+  - 用户明确不限定的边界不得反复追问
   - `project.json.stage` 在本阶段设为 `preparing`
-  - 如果项目已存在，保留未被范围变更覆盖的既有字段
 
-## Stage: 任务编排
-- 目标：把已确认的研究方案拆成可执行任务图
+## Stage: 完整任务图创建
+- 目标：把已确认的研究方案一次投放成完整任务图
 - 输入：
   - `scheme.json`
-  - Kanban 任务状态
-  - 章节校验结果
-  - 结果校验结果
 - 输出：
-  - Kanban 任务图
-  - 搜索任务
-  - 章节写作任务
-  - 章节校验任务
-  - 综合任务
-  - 结果校验任务
-  - 报告渲染任务
+  - 完整任务图
+  - 任务依赖关系
 - 步骤：
   1. 读取已确认的 `scheme.json`
-  2. 为每个章节创建 `search`、`section_write`、`section_review` 三类任务
-  3. 建立每章 `search -> section_write -> section_review` 的依赖链
-  4. 为全部必需章节创建 `synthesis` 任务
-  5. 创建 `result_review` 任务，依赖 `synthesis`
-  6. 创建 `report_render` 任务，依赖 `result_review`
-  7. 更新 `project.json.stage` 为当前编排阶段对应值
+  2. 为每个规划章节创建 `search`、`section_write` 和 `section_review` 任务
+  3. 创建 `synthesis`、`result_review` 和 `report_render` 任务
+  4. 为每个任务写入统一任务契约
+  5. 建立完整依赖关系
+  6. 更新 `project.json.stage`
 - 规则：
-  - 任务拆解必须包含任务类型、负责角色、输入路径、输出路径、依赖关系、目标、约束和验收条件
-  - 任务拆解只创建任务和依赖，不代替其他角色执行正文工作
-  - 创建任务后必须补齐依赖关系、输入输出路径和任务说明
-  - 任务类型和 assignee 的对应关系固定为：
+  - 研究方案确认后一次创建完整任务图
+  - 每个章节的依赖链固定为 `search -> section_write -> section_review`
+  - `synthesis` 依赖全部必需章节的 `section_review`
+  - `result_review` 依赖 `synthesis`
+  - `report_render` 依赖 `result_review`
+  - 完整任务图创建完成后，`project.json.stage` 设为 `dispatching`
+  - `task_type` 和 `assignee` 的对应关系固定为：
     - `search` -> `search-worker`
     - `section_write` -> `section-writer`
     - `section_review` -> `quality-reviewer`
     - `synthesis` -> `synthesis-writer`
     - `result_review` -> `quality-reviewer`
     - `report_render` -> `report-renderer`
-    - `user_confirm` -> `research-orchestrator`
-    - `rework` -> 按失败点分配给最小可修复角色
 
-## Stage: 返工协调
-- 目标：把 worker 的失败、阻塞和范围变更重新编排成可继续执行的任务图
+## Stage: 周期巡检
+- 目标：读取当前项目任务状态，并检查任务图是否按依赖推进
 - 输入：
-  - 非编排角色反馈
-  - 校验失败结果
+  - 当前项目的 Kanban 任务
+  - 当前项目任务评论
+  - 当前项目产物文件
+- 输出：
+  - blocked 任务清单
+  - 更新后的 `project.json`
+- 步骤：
+  1. 查看当前项目的 `done`、`running` 和 `blocked` 任务
+  2. 对已通过的章节校验结果登记章节通过状态
+  3. 检查综合、结果校验和报告渲染任务是否按依赖正常推进
+  4. 更新 `project.json.stage`
+- 规则：
+  - 周期巡检只负责查看和记录任务推进情况
+  - 周期巡检不为正常成功路径创建新任务
+  - 周期巡检不代替 worker 执行正文工作
+  - `project.json.stage` 必须与当前主阶段一致
+
+## Stage: blocked 处理
+- 目标：处理 worker 无法继续执行的任务
+- 输入：
+  - blocked 任务
+  - 任务评论中的统一反馈对象
+  - 相关产物文件
   - 用户补充信息
 - 输出：
-  - 重跑任务
-  - 用户确认请求
-  - 阻塞说明
+  - 更新后的 `scheme.json`
+  - 更新后的任务约束
+  - 调整后的依赖关系
+  - 解除阻塞动作或新的 worker 任务
 - 步骤：
-  1. 读取反馈对象、失败校验文件和 Kanban 评论
-  2. 判断问题属于范围变更、证据不足、写作不足、校验失败还是渲染失败
-  3. 判断是否需要用户确认
-  4. 不需要用户确认时创建最小返工任务并更新依赖
-  5. 需要用户确认时整理问题并向用户确认，再阻塞受影响任务
-  6. 范围变更后更新 `scheme.json` 和受影响任务
+  1. 读取 blocked 任务评论和相关产物
+  2. 判断问题是否需要用户回答
+  3. 不需要用户回答时，更新 `scheme.json`、任务约束或项目文件
+  4. 需要用户回答时，在当前会话中向用户提问并记录答复
+  5. 当前任务可继续时解除阻塞
+  6. 需要回到上游阶段时创建新的 worker 任务并调整受影响依赖
 - 规则：
-  - 反馈必须使用统一反馈格式
-  - 不需要用户判断时，只创建能修复当前失败点的返工任务
-  - 范围变更后，必须重新检查哪些章节任务、综合任务和渲染任务需要重跑
-  - 需要用户确认且当前根流程无法继续推进时，把 `project.json.stage` 设为 `blocked`
+  - 只有 worker 任务进入 `blocked`
+  - 用户提问只发生在当前 `research-orchestrator` 会话中
+  - 同一个 blocked 任务能继续执行时优先解除阻塞继续
+  - 需要回到上游阶段时，只创建受影响范围内的最小返工任务
+  - 返工任务创建后，把受影响的下游依赖改挂到返工任务上
+  - blocked 任务的评论必须包含统一反馈对象
 
-## Stage: 交付完成
-- 目标：在所有必需产物准备完成后收尾并完成根任务
+## Stage: 交付汇总
+- 目标：在报告生成后向用户返回最终结果
 - 输入：
   - `result/research_result.json`
   - `result/validation.json`
   - `reports/index.json`
-  - 未解决阻塞
+  - `reports/current.html`
 - 输出：
-  - 根任务完成摘要
+  - 交付摘要
   - 报告路径
   - 版本记录路径
   - 剩余风险
 - 步骤：
-  1. 检查结果校验是否通过
-  2. 检查 `reports/current.html`、当前版本报告和 `reports/index.json`
-  3. 检查是否存在未解决阻塞
-  4. 汇总剩余风险
-  5. 更新 `project.json.stage` 为 `completed`
-  6. 完成根任务
+  1. 检查结果校验状态
+  2. 检查报告文件和版本文件
+  3. 汇总剩余风险
+  4. 向用户汇总研究结果和报告路径
+  5. 更新 `project.json.stage`
 - 规则：
-  - 结果校验未通过、报告未生成、版本记录缺失或存在未解决阻塞时，不得完成根任务
-  - 根任务完成摘要只汇总项目状态、报告路径、版本记录路径和剩余风险
+  - 结果校验未通过时不得交付
+  - 报告未生成时不得交付
+  - `project.json.stage` 只有在交付完成时才能更新为 `completed`
 
 ## project.json
 - `project_id`：研究项目编号
-- `root_task_id`：根任务编号
 - `workspace_path`：项目 workspace 绝对路径
-- `stage`：当前研究业务阶段，取值为 `preparing`、`orchestrating`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`completed` 或 `blocked`
-  - `preparing`：研究需求或研究方案尚未确认
-  - `orchestrating`：正在创建或调整任务图
-  - `searching`：当前前台阶段为章节检索与证据整理
-  - `writing`：当前前台阶段为章节写作
-  - `reviewing`：当前前台阶段为章节校验
-  - `synthesizing`：当前前台阶段为跨章节综合
-  - `validating`：当前前台阶段为结果校验
-  - `rendering`：当前前台阶段为报告渲染
-  - `completed`：根任务完成
-  - `blocked`：等待用户确认或关键阻塞未解除
+- `stage`：当前研究业务阶段，取值为 `preparing`、`dispatching`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`delivering` 或 `completed`
 - `current_report_version`：当前报告版本，取值为 `null` 或 `vNNN`
 
 ## scheme.json
@@ -170,7 +176,7 @@ metadata:
   - `constraints`：来源、口径、合规或交付限制
 - `assumptions`：可选，执行研究时默认采用的前提假设
 - `methodology`：可选，分析方法
-- `search_strategy`：检索方向、搜索范围、来源类型优先级、可信度要求和时效性要求
+- `search_strategy`：检索范围、来源类型优先级、可信度要求和时效性要求
   - `preferred_source_types`：优先来源类型
   - `required_source_types`：必查来源类型
   - `freshness_requirement`：时效性要求
@@ -204,8 +210,10 @@ metadata:
 - `project_id`：研究项目编号
 - `section_id`：章节编号，仅章节任务需要
 - `workspace_path`：项目 workspace 路径
-- `task_type`：`search`、`section_write`、`section_review`、`synthesis`、`result_review`、`report_render`、`user_confirm` 或 `rework`
+- `task_type`：`search`、`section_write`、`section_review`、`synthesis`、`result_review` 或 `report_render`
 - `assignee`：负责执行的 profile
+- `attempt`：当前任务尝试次数，首轮为 `1`
+- `retry_of_task_id`：可选，重跑任务对应的原任务编号
 - `inputs`：输入文件或目录
 - `outputs`：输出文件或目录
 - `dependencies`：前置任务编号
@@ -215,21 +223,24 @@ metadata:
 
 ## Feedback Contract
 - `reason`：触发原因
+- `help_needed`：当前任务需要的帮助
 - `affected_section_ids`：影响章节
 - `question_to_answer`：待回答问题
 - `suggested_action`：建议动作
 - `required_user_input`：`true` 或 `false`
-- `reason` 和 `suggested_action` 必须写出具体文件路径、失败字段或待补充内容
+- `reason`、`help_needed` 和 `suggested_action` 必须写出具体失败点
 
 ## Handoff Rules
-- 研究方案确认后再创建执行任务
-- 每个必需章节必须有搜索、写作和章节校验任务
-- worker 反馈到来时，先判断是否需要用户确认，再决定是阻塞还是创建最小返工任务
-- 成功完成一个编排阶段时，更新相应文件和任务状态，再完成当前 Kanban 任务
+- 研究方案确认后一次创建完整任务图
+- worker 任务只处理单个执行阶段
+- 正常成功路径不追加创建新任务
+- worker 进入 `blocked` 时，不直接向用户提问
+- 需要用户回答时，由你在当前会话中提问
 
 ## Verification
 - `project.json` 和 `scheme.json` 与当前用户确认内容一致
-- Kanban 任务图覆盖全部必需章节和最终交付阶段
+- 当前项目的 worker 任务都带有统一任务契约
 - 所有任务输入输出路径都指向项目 workspace 内相对路径
-- 根任务完成前 `result/validation.json.status` 为 `passed`
-- 根任务完成前 `reports/index.json`、`reports/current.html` 和当前版本报告存在
+- 所有 blocked 任务都有统一反馈对象
+- 结果交付前 `result/validation.json.status` 为 `passed`
+- 结果交付前 `reports/index.json` 和 `reports/current.html` 存在

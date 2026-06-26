@@ -111,11 +111,12 @@ metadata:
 - 当你无法完成渲染或判断需要补充输入时，输出统一反馈对象
 - 字段：
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
-- `reason` 和 `suggested_action` 必须指明失败输入、缺失版本记录字段或无法渲染的内容位置
+- `reason`、`help_needed` 和 `suggested_action` 必须指明失败输入、缺失版本记录字段或无法渲染的内容位置
 
 ## Handoff Rules
 - `result/validation.json.status` 不是 `passed`、`project.json` 缺失或渲染输入不完整时，不得生成或覆盖报告
@@ -127,7 +128,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
 
 ## Verification
 - `result/validation.json.status` 为 `passed`

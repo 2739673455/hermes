@@ -2039,7 +2039,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 交付：基于结构化研究结果生成可版本化 HTML 报告
 
 ## 17.2 角色规划
-- `research-orchestrator`：接收需求、确认研究边界、生成研究方案、拆分任务、协调返工、交付汇总
+- `research-orchestrator`：在会话中接收需求、确认研究边界、生成研究方案、创建与巡检 Kanban 任务、处理 blocked 任务、协调返工、交付汇总
 - `search-worker`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
 - `section-writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
 - `quality-reviewer`：章节校验、结果校验、证据引用检查、未完成内容检查和返工建议
@@ -2047,61 +2047,63 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - `report-renderer`：基于结构化研究结果生成 HTML
 
 ## 17.3 流程与任务图
-1. 项目启动时，用户直接与 `research-orchestrator` 沟通研究需求，或在 Kanban 中创建一个委派给 `research-orchestrator` 的任务。
-2. `research-orchestrator` 接收研究需求。
-3. `research-orchestrator` 通过交互式、渐进式、循环式对话确认必要研究边界。
-4. 研究边界确认后，`research-orchestrator` 生成研究方案。
-5. 用户确认或修改研究方案。
-6. `research-orchestrator` 拆解搜索与证据整理、章节写作、质量校验、综合和渲染任务。
-7. 每个章节按搜索与证据整理、章节写作、章节校验的顺序执行。
-8. 所有章节校验通过后，进入综合、全局来源去重、`result/research_result.json` 组装、结果校验和报告渲染。
-9. 任一非编排角色发现需要调整或扩展任务时，在当前任务的 Kanban 评论中使用统一反馈格式记录触发原因、受影响章节、待回答问题、建议动作和是否需要用户确认，必要时阻塞当前任务。
-10. `research-orchestrator` 读取相关任务评论、阻塞状态和校验结果，判断是否追加搜索与证据整理、章节修订、报告重渲染或用户确认任务，并更新 Kanban 任务图。
+1. 用户直接在 `research-orchestrator` 会话中提交研究需求
+2. `research-orchestrator` 通过交互式、渐进式、循环式对话确认必要研究边界，生成研究方案
+3. 用户确认或修改研究方案
+4. `research-orchestrator` 创建项目 workspace，并一次创建完整任务图和依赖关系
+5. 各 worker 任务以单任务方式运行；成功时完成当前任务，遇到问题时阻塞当前任务，并在任务评论中写明原因、影响范围、所需帮助和建议动作
+6. `research-orchestrator` 定期查看当前项目的 Kanban 任务；对 blocked 任务决定补充输入、更新方案、解除阻塞、追加返工任务或调整依赖关系
+7. 每个章节按搜索与证据整理、章节写作、章节校验的顺序推进；综合、结果校验和报告渲染任务在首次创建任务图时就已建立依赖关系
+8. 全部上游依赖完成后，综合、结果校验和报告渲染任务按依赖关系自动推进
+9. `synthesis-writer` 生成综合结果和结构化研究结果，`quality-reviewer` 校验结构化研究结果
+10. `research-orchestrator` 继续定期查看任务；结果阶段遇到 blocked 任务时，按同样方式处理
+11. `report-renderer` 渲染 HTML 报告
+12. `research-orchestrator` 读取报告产物，向用户汇总结果并完成本轮研究交付
 
 ```text
-任务：研究需求
+human：提出研究需求
   |
   v
-人工：确认必要研究边界
+research-orchestrator：确认边界并生成研究方案
   |
   v
-任务：生成研究方案
+human：确认研究方案
   |
   v
-人工：确认研究方案
+research-orchestrator：创建 workspace 和完整任务图
+  |
+  +-----------------------------------+
+  |                                   |
+  v                                   v
+search-worker：搜索并整理章节 1 信息    search-worker：搜索并整理章节 2 信息
+  |                                   |
+  v                                   v
+section-writer：写作章节 1            section-writer：写作章节 2
+  |                                   |
+  v                                   v
+quality-reviewer：校验章节 1          quality-reviewer：校验章节 2
+  |                                   |
+  +-----------------------------------+
   |
   v
-任务：拆解研究任务
-  |
-  +---------------------------+
-  |                           |
-  v                           v
-任务：搜索并整理章节 1 信息    任务：搜索并整理章节 2 信息
-  |                           |
-  v                           v
-任务：写作章节 1             任务：写作章节 2
-  |                           |
-  v                           v
-任务：校验章节 1             任务：校验章节 2
-  |                           |
-  +---------------------------+
+synthesis-writer：综合研究结果并组装结构化研究结果
   |
   v
-任务：综合研究结果并组装 result/research_result.json
+quality-reviewer：校验结构化研究结果
   |
   v
-任务：校验 result/research_result.json
+report-renderer：渲染报告
   |
   v
-任务：渲染报告
+research-orchestrator：交付汇总与用户回复
 ```
 
-任务拆解以后的步骤中，各执行 profile 可随时向 `research-orchestrator` 反馈问题，触发追加搜索、章节修订、结果重组、报告重渲染或用户确认任务。
+任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-orchestrator` 在当前会话中定期查看并处理这些任务。
 
 ## 17.4 workspace 目录
 使用固定的项目总目录 `$HOME/.hermes/workspaces/deepresearch`。
 
-创建 root task 时可以通过 `--workspace dir:<path>` 指定项目总目录；未指定 `dir:<path>` 时使用 `$HOME/.hermes/workspaces/deepresearch`。
+`research-orchestrator` 在研究方案确认后创建项目目录；未显式指定项目总目录时，使用 `$HOME/.hermes/workspaces/deepresearch`。
 
 每个研究项目在项目总目录下创建目录 `$HOME/.hermes/workspaces/deepresearch/<project_id>/`，`project_id` 使用 `dr-YYYYMMDD-HHMMSS-<slug>` 格式。`slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符。
 
@@ -2109,7 +2111,7 @@ workspace 结构：
 
 ```text
 $HOME/.hermes/workspaces/deepresearch/<project_id>/
-  project.json                  # 项目编号、根任务编号、workspace 路径、当前研究业务阶段和当前报告版本
+  project.json                  # 项目编号、workspace 路径、当前研究业务阶段和当前报告版本
   scheme.json                   # 研究方案
   sections/
     <section_id>/
@@ -2130,7 +2132,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 
 ## 17.5 `research-orchestrator`
 ### 17.5.1 职责
-负责研究项目入口、边界确认、方案生成、Kanban 任务图维护、返工调度和交付汇总
+负责研究项目入口、边界确认、方案生成、workspace 管理、Kanban 任务创建、周期巡检、blocked 处理和交付汇总
 
 ### 17.5.2 依赖
 - Toolsets：`file`、`kanban`
@@ -2152,55 +2154,69 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 只确认会影响研究方案的边界
     - 用户明确不限定的边界不得反复追问
     - 研究方案确认前不得启动搜索与证据整理任务
-    - 人工确认和范围变更写入 Kanban 评论或事件
-- 任务编排
-  - 输入：`scheme.json`、Kanban 任务状态、章节校验结果、结果校验结果
-  - 输出：Kanban 任务图、搜索与证据整理任务、章节写作任务、章节校验任务、综合任务、结果校验任务、报告渲染任务及依赖关系
+    - 用户确认和范围变更同步更新到项目文件和相关任务约束
+- 完整任务图创建
+  - 输入：`scheme.json`
+  - 输出：项目目录、完整任务图、任务依赖关系
   - 步骤：
     - 读取 `scheme.json`
-    - 生成 Kanban 任务图
-    - 创建章节搜索与证据整理任务
-    - 创建章节写作任务
-    - 创建章节校验任务
+    - 创建项目目录
+    - 为每个规划章节创建搜索、章节写作和章节校验任务
     - 创建综合、结果校验和报告渲染任务
+    - 建立完整依赖关系
   - 执行规则：
-    - 任务拆解必须包含章节编号、负责角色、输入路径、输出路径、依赖关系和验收条件
-    - 只创建和维护任务，不直接执行检索、写作、综合、校验或渲染
-    - 创建完任务后必须补齐依赖关系和输入输出路径
-- 返工协调
-  - 输入：非编排角色反馈、校验失败结果、用户补充信息
-  - 输出：重跑任务、用户确认请求、阻塞说明
+    - 每个任务必须包含 `project_id`、`workspace_path`、`task_type`、`inputs`、`outputs`、`objective`、`constraints`、`acceptance_criteria` 和 `attempt`
+    - 研究方案确认后一次创建完整任务图
+    - 章节任务依赖链固定为 `search -> section_write -> section_review`
+    - 综合任务依赖全部必需章节的 `section_review`
+    - 结果校验任务依赖 `synthesis`
+    - 报告渲染任务依赖 `result_review`
+    - 完整任务图创建完成后，`project.json.stage` 更新为 `dispatching`
+- 周期巡检
+  - 输入：当前项目的 Kanban 任务、任务评论、已保存产物、用户补充信息
+  - 输出：项目进度状态、blocked 任务清单、更新后的项目文件
   - 步骤：
-    - 读取反馈和校验失败结果
-    - 判断是否需要用户确认
-    - 创建返工任务或用户确认请求
-    - 更新受影响的 Kanban 任务
+    - 定期查看当前项目的 `done`、`running` 和 `blocked` 任务
+    - 对已通过的章节校验结果登记章节通过状态
+    - 检查综合、结果校验和报告渲染任务是否按依赖正常推进
+    - 更新 `project.json.stage`
+  - 执行规则：
+    - 周期巡检只负责查看和记录任务推进情况，不为正常成功路径创建新任务
+    - `project.json.stage` 必须与当前主阶段一致
+- blocked 处理
+  - 输入：blocked 任务、任务评论、相关产物、用户补充信息
+  - 输出：补充约束、返工任务、调整后的依赖关系、解除阻塞动作
+  - 步骤：
+    - 读取 blocked 任务评论和相关产物
+    - 判断问题是否需要用户回答
+    - 不需要用户回答时，更新 `scheme.json`、任务约束或项目文件
+    - 需要用户回答时，在当前会话中向用户提问并记录答复
+    - 当前任务可继续时解除阻塞
+    - 需要回到上游阶段时创建新的 worker 任务并调整受影响依赖
   - 执行规则：
     - 反馈必须使用统一反馈格式
-    - 需要用户判断时阻塞相关任务
-    - 不需要用户判断时，只创建能修复当前失败点的返工任务
-    - 范围变更必须更新 `scheme.json` 和受影响的 Kanban 任务
-    - 需要用户判断时先记录反馈，再阻塞相关任务
-    - 不需要用户判断时先创建最小返工任务，再更新依赖关系
-- 交付完成
-  - 输入：`result/research_result.json`、`result/validation.json`、`reports/index.json`、未解决阻塞
-  - 输出：根任务完成摘要、报告路径、版本记录路径、剩余风险
+    - 只有 worker 任务进入 `blocked`
+    - 用户提问只发生在 `research-orchestrator` 当前会话中
+    - 同一个 blocked 任务能继续执行时优先解除阻塞继续
+    - 需要重跑上游阶段时，只创建受影响范围内的最小返工任务，并把下游依赖改挂到返工任务上
+- 交付汇总
+  - 输入：`result/research_result.json`、`result/validation.json`、`reports/index.json`、`reports/current.html`
+  - 输出：交付摘要、报告路径、版本记录路径、剩余风险
   - 步骤：
-    - 检查结果校验状态
-    - 检查报告文件
-    - 检查版本记录
+    - 检查结果校验状态和报告文件
     - 汇总剩余风险
-    - 完成根任务
+    - 向用户汇总研究结果
+    - 更新 `project.json.stage`
   - 执行规则：
-    - 结果校验未通过、报告未生成、版本记录缺失或存在未解决阻塞时，不得完成根任务
-    - 根任务完成摘要只汇总项目状态、报告路径、版本记录路径和剩余风险
+    - 结果校验未通过或报告未生成时，不得完成交付
+    - `project.json.stage` 只有在交付完成时才能更新为 `completed`
+    - 交付摘要只汇总项目状态、报告路径、版本记录路径和剩余风险
 
 ### 17.5.4 文件格式
 `project.json` 字段：
 - `project_id`：研究项目编号，格式为 `dr-YYYYMMDD-HHMMSS-<slug>`
-- `root_task_id`：根任务编号
 - `workspace_path`：项目 workspace 路径
-- `stage`：当前研究业务阶段，取值为 `preparing`、`orchestrating`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`completed`、`blocked`
+- `stage`：当前研究业务阶段，取值为 `preparing`、`dispatching`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`delivering`、`completed`
 - `current_report_version`：当前报告版本，取值为 `null` 或 `vNNN`
 
 `scheme.json` 字段：
@@ -2209,7 +2225,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - `scope`：研究边界与约束，包括研究范围、排除项和口径限制
 - `assumptions`：可选，执行研究时默认采用的前提假设
 - `methodology`：可选，分析方法，如 SWOT、PEST、对比分析、案例研究、定量分析等
-- `search_strategy`：检索方法与来源筛选标准，包括检索方向、搜索范围、来源类型优先级、可信度与时效性要求
+- `search_strategy`：检索方法与来源筛选标准，包括检索范围、来源类型优先级、可信度与时效性要求
 - `known_sources`：已知要查阅的具体数据库、文档、平台或内部知识库清单
 - `outline`：章节结构、章节目标和章节证据要求
   - `section_id`：章节编号，格式为 `sNNN`
@@ -2226,8 +2242,10 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - `project_id`：研究项目编号
 - `section_id`：章节编号，仅章节任务需要，格式为 `sNNN`
 - `workspace_path`：项目 workspace 路径
-- `task_type`：任务类型，取值为 `search`、`section_write`、`section_review`、`synthesis`、`result_review`、`report_render`、`user_confirm`、`rework`
+- `task_type`：任务类型，取值为 `search`、`section_write`、`section_review`、`synthesis`、`result_review`、`report_render`
 - `assignee`：负责执行的 profile
+- `attempt`：当前任务尝试次数，首轮为 `1`
+- `retry_of_task_id`：可选，重跑任务对应的原任务编号
 - `inputs`：输入文件或目录，使用项目 workspace 内相对路径
 - `outputs`：输出文件或目录，使用项目 workspace 内相对路径
 - `dependencies`：前置任务编号
@@ -2237,6 +2255,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 
 ### 17.5.6 反馈格式
 - `reason`：触发原因
+- `help_needed`：当前任务需要的帮助
 - `affected_section_ids`：影响章节
 - `question_to_answer`：待回答问题
 - `suggested_action`：建议动作
@@ -2244,9 +2263,8 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 
 ### 17.5.7 Profile 配置
 ```bash
-hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务图维护、返工调度和交付汇总"
+hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务创建、周期巡检、blocked 处理和交付汇总"
 research-orchestrator config set toolsets '["hermes-cli", "kanban"]'
-mkdir -p ~/.hermes/profiles/research-orchestrator/skills
 cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/
 ```
 
@@ -2266,11 +2284,10 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
 `web` toolsets：https://hermes-agent.nousresearch.com/docs/user-guide/features/web-search
   - Tavily：https://app.tavily.com/ -> TAVILY_API_KEY
   - Firecrawl：https://www.firecrawl.dev/ -> FIRECRAWL_API_KEY
-  - Brave：https://api-dashboard.search.brave.com/ -> BRAVE_API_KEY
-  - DuckDuckGo：hermes chat -p '帮我配置 DuckDuckGo 搜索后端，并测试是否能正常使用'
+  - DuckDuckGo：hermes chat -q '帮我配置 DuckDuckGo 搜索后端，并测试是否能正常使用'
 
 `browser` toolsets：https://hermes-agent.nousresearch.com/docs/user-guide/features/browser
-  - hermes chat -p '帮我配置 browser 工具集，并测试是否能正常使用'
+  - hermes chat -q '帮我配置 browser 工具集，并测试是否能正常使用'
 
 ### 17.6.3 阶段
 - 搜索与证据整理
@@ -2297,7 +2314,8 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
     - 可复核事实不保存大段原文
     - 不得用低可信来源填补关键证据缺口
     - 当前任务成功时先保存 `sections/<section_id>/research.json`，再完成当前任务
-    - 检索或证据不足时使用统一反馈格式记录缺口并阻塞当前任务
+    - 检索或证据不足时，先保存当前已成立的 `sections/<section_id>/research.json`，再使用统一反馈格式记录缺口并阻塞当前任务
+    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
     - 不创建返工任务或下游任务
 
 ### 17.6.4 文件格式
@@ -2358,7 +2376,6 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
 ### 17.6.5 Profile 配置
 ```bash
 hermes profile create search-worker --clone --description "资料研究员：负责按章节目标执行检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录"
-mkdir -p ~/.hermes/profiles/search-worker/skills
 cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/skills/
 ```
 
@@ -2392,7 +2409,8 @@ cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/s
     - 章节风险说明必须覆盖证据不足、口径差异、时效性不足、样本偏差和适用边界
     - 未完成内容不得进入 `sections/<section_id>/section.json`
     - 当前任务成功时先保存 `sections/<section_id>/section.json`，再完成当前任务
-    - 证据不足、证据链断裂或需要补充资料时使用统一反馈格式阻塞当前任务
+    - 证据不足、证据链断裂或需要补充资料时，使用统一反馈格式记录问题并阻塞当前任务
+    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
     - 不创建返工任务或下游任务
 
 ### 17.7.4 文件格式
@@ -2436,7 +2454,6 @@ cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/s
 ### 17.7.5 Profile 配置
 ```bash
 hermes profile create section-writer --clone --description "专题撰稿编辑：负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明"
-mkdir -p ~/.hermes/profiles/section-writer/skills
 cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer/skills/
 ```
 
@@ -2467,9 +2484,11 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
     - 证据链引用的 `source_id` 必须存在
     - 公开来源必须提供 HTTP URL
     - 内部知识库来源必须标记来源类型
-    - 缺少必需输入文件或必需章节数据时，校验状态记为 `blocked`
+    - 缺少必需输入文件、必需章节数据、引用断裂或内容未完成时，且不需要用户判断，校验状态记为 `failed`
+    - 只有需要用户判断或外部授权时，校验状态记为 `blocked`
     - 校验通过时先保存 `sections/<section_id>/validation.json`，再完成当前任务
-    - 校验失败或阻塞时先保存 `sections/<section_id>/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
+    - 校验失败时，先保存 `sections/<section_id>/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
+    - 校验状态为 `blocked` 时，也先保存 `sections/<section_id>/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
     - 返工反馈必须能指向具体失败点
 - 结果校验
   - 输入：`scheme.json`、`workspace_path`、全部章节校验结果、`synthesis/synthesis.json`、`result/research_result.json`、全局来源列表、全局证据链
@@ -2484,9 +2503,11 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
     - 所有需要正文的章节都已保存
     - 所有必需章节校验已通过
     - 报告渲染输入不包含未完成内容或占位符
-    - 缺少必需输入文件、缺少必需章节校验文件或需要用户判断时，校验状态记为 `blocked`
+    - 缺少必需输入文件、缺少必需章节校验文件、引用断裂或存在未完成内容时，且不需要用户判断，校验状态记为 `failed`
+    - 只有需要用户判断或外部授权时，校验状态记为 `blocked`
     - 校验通过时先保存 `result/validation.json`，再完成当前任务
-    - 校验失败或阻塞时先保存 `result/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
+    - 校验失败时，先保存 `result/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
+    - 校验状态为 `blocked` 时，也先保存 `result/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
     - 返工反馈必须能指向具体失败点
 
 ### 17.8.4 文件格式
@@ -2505,6 +2526,7 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
 - `missing_items`：缺失内容
 - `feedback`：返工反馈
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
@@ -2525,6 +2547,7 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
 - `affected_section_ids`：受影响章节编号
 - `feedback`：返工反馈
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
@@ -2534,7 +2557,6 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
 ### 17.8.5 Profile 配置
 ```bash
 hermes profile create quality-reviewer --clone --description "事实核查编辑：负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议"
-mkdir -p ~/.hermes/profiles/quality-reviewer/skills
 cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-reviewer/skills/
 ```
 
@@ -2570,7 +2592,8 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
     - 不得新增事实、来源、判断或证据链
     - `result/research_result.json.sections` 按 `scheme.json.outline` 的章节顺序输出
     - 当前任务成功时先保存 `synthesis/synthesis.json` 和 `result/research_result.json`，再完成当前任务
-    - 必需章节未通过校验、缺少输入文件或全局引用断裂时使用统一反馈格式阻塞当前任务
+    - 必需章节未通过校验、缺少输入文件或全局引用断裂时，使用统一反馈格式记录问题并阻塞当前任务
+    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
 
 ### 17.9.4 文件格式
 `synthesis/synthesis.json` 字段：
@@ -2635,7 +2658,6 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
 ### 17.9.5 Profile 配置
 ```bash
 hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源去重、全局风险整理和结构化研究结果组装"
-mkdir -p ~/.hermes/profiles/synthesis-writer/skills
 cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/
 ```
 
@@ -2672,7 +2694,8 @@ cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-wr
     - `reports/index.json` 必须记录报告格式、引用来源编号、生成时间和存储地址
     - 首次渲染时 `reports/index.json` 可以不存在，但必须在本次渲染中创建并生成 `v001`
     - 当前任务成功时先写入 HTML、`reports/index.json` 和 `project.json`，再完成当前任务
-    - 结果校验未通过、`project.json` 缺失或渲染输入不完整时使用统一反馈格式阻塞当前任务
+    - 结果校验未通过、`project.json` 缺失或渲染输入不完整时，使用统一反馈格式记录问题并阻塞当前任务
+    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
 
 ### 17.10.4 文件格式
 `reports/index.json` 字段：
@@ -2697,6 +2720,12 @@ cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-wr
 ### 17.10.5 Profile 配置
 ```bash
 hermes profile create report-renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
-mkdir -p ~/.hermes/profiles/report-renderer/skills
 cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer/skills/
+```
+
+### 17.10.6 示例
+```bash
+research-orchestrator chat --skills deepresearch-orchestrator
+
+请研究 2026 年 FIFA 男子世界杯，分析哪支队伍最有可能夺冠
 ```

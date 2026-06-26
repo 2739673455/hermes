@@ -81,7 +81,7 @@ metadata:
 - 事实文本必须足够具体，能够被 `source_ids` 回溯验证
 - `source_id` 在章节内唯一，格式为 `src-<section_id>-NNN`
 - `conflict_id`、`risk_id` 和 `gap_id` 在章节内唯一
-- 缺少足够证据时可以保存带 `gaps` 的 `research.json`，但不得把当前任务标记为完成
+- 缺少足够证据时可以保存带 `gaps` 的 `research.json`，但不得把证据缺口伪装成已满足的证据要求
 
 ## research.json
 - `section_id`：章节编号，格式为 `sNNN`
@@ -141,23 +141,25 @@ metadata:
 - 当你无法完成章节检索或判断需要补充输入时，输出统一反馈对象
 - 字段：
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
-- `reason` 和 `suggested_action` 必须指明当前缺口对应的章节问题、缺失来源类型或失败文件字段
+- `reason`、`help_needed` 和 `suggested_action` 必须指明当前缺口对应的章节问题、缺失来源类型或失败文件字段
 
 ## Handoff Rules
 - 缺少必需输入、章节不存在、研究范围冲突或无法访问必需来源时，不得伪造输出
 - 能形成完整、可校验的 `research.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
 - 需要追加资料、追加检索、用户判断或上游修正时，整理统一反馈对象
 - 在 Kanban 任务上下文内：
-  - 先记录反馈
+  - 能保存当前已成立的 `research.json` 时先保存
+  - 再记录反馈
   - 再阻塞当前任务
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
 
 ## Verification
 - `section_id` 存在于 `scheme.json.outline`

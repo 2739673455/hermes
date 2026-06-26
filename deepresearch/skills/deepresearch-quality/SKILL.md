@@ -55,7 +55,8 @@ metadata:
 - 证据链引用的 `source_id` 必须存在于 `research.json.sources`
 - 公开来源必须提供 HTTP URL
 - 内部知识库来源必须标记来源类型
-- 缺少必需输入文件或必需章节数据时，章节校验结果使用 `blocked`
+- 缺少必需输入文件、必需章节数据、引用断裂或内容未完成时，且不需要用户判断，章节校验结果使用 `failed`
+- 只有需要用户判断或外部授权时，章节校验结果使用 `blocked`
 - 校验失败时 `issues` 至少包含一个问题
 - 返工反馈必须能指向具体失败点
 - `issues.path` 必须写成具体 JSON 路径
@@ -90,7 +91,8 @@ metadata:
 - 所有必需章节校验已通过
 - 全局来源列表不得包含重复来源
 - 报告渲染输入不得包含未完成内容或占位符
-- 缺少必需输入文件、缺少必需章节校验文件或需要用户判断时，结果校验使用 `blocked`
+- 缺少必需输入文件、缺少必需章节校验文件、引用断裂或存在未完成内容时，且不需要用户判断，结果校验使用 `failed`
+- 只有需要用户判断或外部授权时，结果校验使用 `blocked`
 - `result/validation.json.status` 只有在全部必需检查通过时才能为 `passed`
 - 校验失败时 `issues` 至少包含一个问题
 - 返工反馈必须能指向具体失败点
@@ -112,6 +114,7 @@ metadata:
 - `affected_section_ids`：受影响章节编号，仅结果校验需要
 - `feedback`：返工反馈
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
@@ -121,7 +124,7 @@ metadata:
 ## Status Rules
 - `passed`：所有必需校验项通过
 - `failed`：存在可通过返工修复的问题
-- `blocked`：缺少必要输入、需要用户判断或无法确定校验结论
+- `blocked`：需要用户判断或外部授权后才能继续
 - `required_user_input` 为 `true` 时，`feedback.question_to_answer` 必须填写
 - 不需要用户判断时，`feedback.suggested_action` 必须指向可执行返工动作
 
@@ -129,11 +132,12 @@ metadata:
 - 当你需要把问题交回 orchestrator 时，使用统一反馈对象
 - 字段：
   - `reason`：触发原因
+  - `help_needed`：当前任务需要的帮助
   - `affected_section_ids`：影响章节
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
-- `reason` 和 `suggested_action` 必须能定位到具体失败文件、字段或缺失输入
+- `reason`、`help_needed` 和 `suggested_action` 必须能定位到具体失败文件、字段或缺失输入
 
 ## Handoff Rules
 - 章节校验和结果校验都必须先保存对应 `validation.json`
@@ -145,7 +149,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象和 `status`
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
 
 ## Verification
 - 输出文件路径与任务类型一致

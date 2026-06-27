@@ -2763,7 +2763,7 @@ research-orchestrator chat --skills deepresearch-orchestrator
 > 研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠
 ```
 
-接入 Open-WebUI：
+接入 Open-WebUI：https://hermes-agent.nousresearch.com/docs/user-guide/messaging/open-webui
 
 ```bash
 # 启动 API 服务器

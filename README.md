@@ -1391,6 +1391,29 @@ session_reset:
 
 覆盖优先级：平台覆盖 > 聊天类型覆盖 > 默认策略。
 
+## 12.5 API 服务器
+API 服务器将 hermes-agent 作为 OpenAI 兼容的 HTTP 端点暴露出来。任何支持 OpenAI 格式的前端都可以连接到 hermes-agent 并将其用作后端。
+
+启动 API 服务器：
+```bash
+hermes config set API_SERVER_ENABLED true
+hermes config set API_SERVER_KEY your-secret-key
+```
+
+重启 Gateway：
+```bash
+hermes gateway restart
+```
+
+验证 API 服务器是否可用：
+```bash
+curl -s http://127.0.0.1:8642/health
+# {"status": "ok", ...}
+
+curl -s -H "Authorization: Bearer your-secret-key" http://127.0.0.1:8642/v1/models
+# {"object":"list","data":[{"id":"hermes-agent", ...}]}
+```
+
 # 13. Profile
 通过 Profile 能够创建并运行多个独立的 Agent，每个 Agent 有独立的配置、会话、记忆、技能、定时任务，状态数据库和 Gateway。
 
@@ -1436,7 +1459,11 @@ hermes profile use default  # 恢复默认 Profile 为 default
 ```
 
 ## 13.3 工作原理
-Profile 使用 `HERMES_HOME` 环境变量。运行 `coder chat` 时，包装脚本会在启动 Hermes 前设置 `HERMES_HOME=~/.hermes/profiles/coder`。代码中通过 `get_hermes_home()` 解析路径，把 Hermes 状态限定在对应 Profile 目录下，包括配置、会话、记忆、技能、状态数据库、Gateway PID、日志和定时任务。
+Profile 使用 `HERMES_HOME` 环境变量。
+
+运行 `coder chat` 时，包装脚本会在启动 Hermes 前设置 `HERMES_HOME=~/.hermes/profiles/coder`。
+
+代码中通过 `get_hermes_home()` 解析路径，把 Hermes 状态限定在对应 Profile 目录下，包括配置、会话、记忆、技能、状态数据库、Gateway PID、日志和定时任务。
 
 # 14. Cron
 Hermes 通过 `cronjob` 工具管理定时任务，可以用自然语言、cron 表达式调度自动运行的任务。
@@ -2183,6 +2210,10 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
   - 执行规则：
     - 周期巡检只负责查看和记录任务推进情况，不为正常成功路径创建新任务
     - `project.json.stage` 必须与当前主阶段一致
+    - 完整任务图创建完成后持续巡检，直到交付完成或用户明确暂停、停止项目
+    - 每轮巡检结束后，如项目未结束，立即进入下一轮巡检
+    - 发现 `blocked` 任务后立即进入 blocked 处理，不等待用户再次提醒
+    - 发现报告已生成且结果满足交付条件后立即进入交付汇总
 - blocked 处理
   - 输入：blocked 任务、任务评论、相关产物、用户补充信息
   - 输出：补充约束、返工任务、调整后的依赖关系、解除阻塞动作
@@ -2199,6 +2230,8 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 用户提问只发生在 `research-orchestrator` 当前会话中
     - 同一个 blocked 任务能继续执行时优先解除阻塞继续
     - 需要重跑上游阶段时，只创建受影响范围内的最小返工任务，并把下游依赖改挂到返工任务上
+    - 单个 blocked 任务处理结束后立即回到周期巡检
+    - 同一轮中存在多个 blocked 任务时，按影响范围依次处理
 - 交付汇总
   - 输入：`result/research_result.json`、`result/validation.json`、`reports/index.json`、`reports/current.html`
   - 输出：交付摘要、报告路径、版本记录路径、剩余风险
@@ -2265,7 +2298,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 ```bash
 hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务创建、周期巡检、blocked 处理和交付汇总"
 research-orchestrator config set toolsets '["hermes-cli", "kanban"]'
-cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/
+cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/research/
 ```
 
 ## 17.6 `search-worker`
@@ -2376,7 +2409,7 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
 ### 17.6.5 Profile 配置
 ```bash
 hermes profile create search-worker --clone --description "资料研究员：负责按章节目标执行检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录"
-cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/skills/
+cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/skills/research/
 ```
 
 ## 17.7 `section-writer`
@@ -2454,7 +2487,7 @@ cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/s
 ### 17.7.5 Profile 配置
 ```bash
 hermes profile create section-writer --clone --description "专题撰稿编辑：负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明"
-cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer/skills/
+cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer/skills/research/
 ```
 
 ## 17.8 `quality-reviewer`
@@ -2557,7 +2590,7 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
 ### 17.8.5 Profile 配置
 ```bash
 hermes profile create quality-reviewer --clone --description "事实核查编辑：负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议"
-cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-reviewer/skills/
+cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-reviewer/skills/research/
 ```
 
 ## 17.9 `synthesis-writer`
@@ -2658,7 +2691,7 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
 ### 17.9.5 Profile 配置
 ```bash
 hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源去重、全局风险整理和结构化研究结果组装"
-cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/
+cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/research/
 ```
 
 ## 17.10 `report-renderer`
@@ -2720,12 +2753,48 @@ cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-wr
 ### 17.10.5 Profile 配置
 ```bash
 hermes profile create report-renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
-cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer/skills/
+cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer/skills/research/
 ```
 
 ### 17.10.6 示例
 ```bash
 research-orchestrator chat --skills deepresearch-orchestrator
 
-研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠
+> 研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠
+```
+
+接入 Open-WebUI：
+
+```bash
+# 启动 API 服务器
+research-orchestrator config set API_SERVER_ENABLED true
+research-orchestrator config set API_SERVER_KEY 123123
+research-orchestrator config set API_SERVER_PORT 8643
+
+# 启动 Gateway
+research-orchestrator gateway install
+research-orchestrator gateway start
+
+# 验证 API 服务器是否可用
+curl -s http://127.0.0.1:8643/health
+# {"status": "ok", ...}
+
+curl -s -H "Authorization: Bearer 123123" http://127.0.0.1:8643/v1/models
+# {"object":"list","data":[{"id":"hermes-agent", ...}]}
+
+# 启动 Open-WebUI
+cd docker
+docker compose up -d
+
+# 访问 Open-WebUI
+http://localhost:8080
+
+# 可选：在 Open-WebUI 中展示 Hermes 工具调用
+点击右上角用户头像 ->
+-> 管理员面板
+-> 设置
+-> 外部连接
+-> http://localhost:8643/v1 右侧配置按钮
+-> 接口类型
+-> 点击切换 Chat Completions 和 Response
 ```

@@ -6,6 +6,7 @@ metadata:
   hermes:
     tags: [deepresearch, orchestration]
     category: deepresearch
+    requires_toolsets: [file, kanban, terminal]
 ---
 
 # DeepResearch Orchestrator
@@ -20,15 +21,16 @@ metadata:
 - worker 任务只承担单个执行阶段
 - worker 成功时把当前任务推进到 `done`
 - worker 无法继续时把当前任务推进到 `blocked`
-- 你定期查看当前项目任务，重点处理 `done` 和 `blocked`
-- 完整任务图创建完成后，你持续执行“周期巡检 -> blocked 处理 -> 周期巡检”
-- 只有在项目已完成交付、用户明确停止研究或用户明确暂停研究时，你才结束巡检
+- 你按 `project.json.monitoring.next_poll_at` 定期查看当前项目任务，重点处理状态变化和 `blocked`
+- 完整任务图创建完成后，你持续执行“节流巡检 -> blocked 处理 -> 节流巡检”
+- 无状态变化不是项目结束条件
+- 只有在项目已完成交付、用户明确停止研究或用户明确暂停研究时，你才结束项目监督
 
 ## Before Starting
 - 如果用户提供现有 `project_id`、workspace 或报告路径，先读取现有 `project.json` 和 `scheme.json`
 - 如果项目已存在，优先复用已有项目目录和已有研究方案
 - 如果项目不存在，按 workspace 规则创建项目目录
-- 每次巡检前先读取当前项目相关任务评论和最新产物
+- 每次巡检前先读取 `project.json.monitoring`
 - 如果当前会话没有 `kanban` 工具，不继续执行
 - 不得在首次巡检、单次 blocked 处理或单轮状态汇报后自行结束当前项目监督
 
@@ -39,6 +41,19 @@ metadata:
 - `slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符
 - 项目目录至少包含 `sections/`、`synthesis/`、`result/` 和 `reports/`
 - 所有任务输入输出路径都使用项目 workspace 内相对路径
+
+## Monitoring Rules
+- 常规巡检间隔为 180 秒
+- `project.json.monitoring.poll_interval_seconds` 固定为 `180`
+- `project.json.monitoring.next_poll_at` 是下一次常规巡检时间，使用 ISO 8601 字符串
+- `project.json.monitoring.last_seen_task_status_digest` 记录上一轮任务状态摘要
+- 当前时间早于 `next_poll_at` 且没有用户补充信息时，不读取 Kanban 任务列表
+- 每轮常规巡检最多读取一次任务列表
+- 常规巡检只展开读取状态变化任务、`blocked` 任务和报告交付相关任务的评论与产物
+- 出现 `blocked` 任务、报告已生成、用户补充信息或任务状态摘要变化时，立即处理
+- 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，只更新 `next_poll_at` 和状态摘要
+- 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，等待到 `next_poll_at` 后再执行下一轮常规巡检
+- 无状态变化不是完成、暂停或停止
 
 ## Stage: 研究准备
 - 目标：把研究需求转成 `project.json` 和 `scheme.json`
@@ -83,34 +98,41 @@ metadata:
   - `result_review` 依赖 `synthesis`
   - `report_render` 依赖 `result_review`
   - 完整任务图创建完成后，`project.json.stage` 设为 `dispatching`
-  - `task_type` 和 `assignee` 的对应关系固定为：
-    - `search` -> `search-worker`
-    - `section_write` -> `section-writer`
-    - `section_review` -> `quality-reviewer`
-    - `synthesis` -> `synthesis-writer`
-    - `result_review` -> `quality-reviewer`
-    - `report_render` -> `report-renderer`
+  - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 skill
+  - `task_type`、`assignee` 和 `skills` 的对应关系固定为：
+    - `search` -> `search-worker` -> `deepresearch-search`
+    - `section_write` -> `section-writer` -> `deepresearch-section`
+    - `section_review` -> `quality-reviewer` -> `deepresearch-quality`
+    - `synthesis` -> `synthesis-writer` -> `deepresearch-synthesis`
+    - `result_review` -> `quality-reviewer` -> `deepresearch-quality`
+    - `report_render` -> `report-renderer` -> `deepresearch-report`
 
 ## Stage: 周期巡检
 - 目标：读取当前项目任务状态，并检查任务图是否按依赖推进
 - 输入：
   - 当前项目的 Kanban 任务
-  - 当前项目任务评论
-  - 当前项目产物文件
+  - 状态变化任务评论
+  - 状态变化任务产物文件
 - 输出：
   - blocked 任务清单
   - 更新后的 `project.json`
 - 步骤：
-  1. 查看当前项目的 `done`、`running` 和 `blocked` 任务
-  2. 对已通过的章节校验结果登记章节通过状态
-  3. 检查综合、结果校验和报告渲染任务是否按依赖正常推进
-  4. 更新 `project.json.stage`
+  1. 检查 `project.json.monitoring.next_poll_at`
+  2. 到达巡检时间后查看当前项目的 `done`、`running`、`ready`、`todo` 和 `blocked` 任务
+  3. 对已通过的章节校验结果登记章节通过状态
+  4. 检查综合、结果校验和报告渲染任务是否按依赖正常推进
+  5. 更新 `project.json.stage`
+  6. 更新 `project.json.monitoring`
 - 规则：
   - 周期巡检只负责查看和记录任务推进情况
   - 周期巡检不为正常成功路径创建新任务
   - 周期巡检不代替 worker 执行正文工作
   - `project.json.stage` 必须与当前主阶段一致
-  - 每轮巡检结束后，若项目尚未交付完成且用户未明确暂停或停止，继续下一轮巡检
+  - 未到 `next_poll_at` 时不执行常规巡检
+  - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，设置下一次 `next_poll_at`
+  - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，等待到 `next_poll_at` 后再执行下一轮常规巡检
+  - 无状态变化时不得立即进入下一轮常规巡检
+  - 无状态变化时不得结束项目监督
   - 周期巡检发现 `blocked` 任务后，立即转入 blocked 处理，不等待用户再次提醒
   - 周期巡检发现全部上游任务已完成且报告已生成后，立即转入交付汇总
 
@@ -171,6 +193,11 @@ metadata:
 - `workspace_path`：项目 workspace 绝对路径
 - `stage`：当前研究业务阶段，取值为 `preparing`、`dispatching`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`delivering` 或 `completed`
 - `current_report_version`：当前报告版本，取值为 `null` 或 `vNNN`
+- `monitoring`：巡检状态
+  - `poll_interval_seconds`：常规巡检间隔，固定为 `180`
+  - `next_poll_at`：下一次常规巡检时间，使用 ISO 8601 字符串
+  - `last_seen_task_status_digest`：上一轮任务状态摘要
+  - `last_poll_at`：上一轮实际巡检时间，使用 ISO 8601 字符串
 
 ## scheme.json
 - `research_goal`：研究目标和最终需要回答的问题
@@ -220,6 +247,7 @@ metadata:
 - `workspace_path`：项目 workspace 路径
 - `task_type`：`search`、`section_write`、`section_review`、`synthesis`、`result_review` 或 `report_render`
 - `assignee`：负责执行的 profile
+- `skills`：当前任务强制加载的 skill 列表
 - `attempt`：当前任务尝试次数，首轮为 `1`
 - `retry_of_task_id`：可选，重跑任务对应的原任务编号
 - `inputs`：输入文件或目录
@@ -241,6 +269,7 @@ metadata:
 ## Handoff Rules
 - 研究方案确认后一次创建完整任务图
 - worker 任务只处理单个执行阶段
+- worker 任务必须通过 `kanban_create.skills` 加载对应 skill
 - 正常成功路径不追加创建新任务
 - worker 进入 `blocked` 时，不直接向用户提问
 - 需要用户回答时，由你在当前会话中提问
@@ -248,6 +277,8 @@ metadata:
 ## Verification
 - `project.json` 和 `scheme.json` 与当前用户确认内容一致
 - 当前项目的 worker 任务都带有统一任务契约
+- 当前项目的 worker 任务都带有对应 `skills`
+- 无状态变化的常规巡检不连续执行
 - 所有任务输入输出路径都指向项目 workspace 内相对路径
 - 所有 blocked 任务都有统一反馈对象
 - 结果交付前 `result/validation.json.status` 为 `passed`

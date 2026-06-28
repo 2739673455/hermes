@@ -900,8 +900,8 @@ Gateway 常用挂载点：
 | `agent:start` / `agent:step` / `agent:end`        | Gateway 中 Agent 处理消息的过程 | 监控长任务、记录工具循环       |
 | `command:*` / `command:<name>`                    | Gateway 里执行斜杠命令时        | 命令审计、权限统计、外部通知   |
 
-## 8.4 Shell Hook 示例：对话结束或请求审批时弹窗提示
-当一次对话结束后，`on_session_end` 会触发脚本；当危险命令需要用户审批时，`pre_approval_request` 会触发脚本。
+## 8.4 Shell Hook 示例：对话结束、请求审批或澄清完成时弹窗提示
+当一次对话结束后，`on_session_end` 会触发脚本；当危险命令需要用户审批时，`pre_approval_request` 会触发脚本；当 `clarify` 工具返回后，`post_tool_call` 会触发脚本。
 
 1. 创建脚本目录并复制脚本：
 
@@ -921,10 +921,14 @@ chmod +x ~/.hermes/agent-hooks/conversation-end-popup.py
 hooks:
   on_session_end:
     - command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 完成"
-      timeout: 15
+      timeout: 10
   pre_approval_request:
     - command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 请求批准"
-      timeout: 15
+      timeout: 10
+  post_tool_call:
+    - matcher: "clarify"
+      command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 澄清"
+      timeout: 10
 ```
 
 3. 测试脚本：
@@ -2079,11 +2083,11 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 3. 用户确认或修改研究方案
 4. `research-orchestrator` 创建项目 workspace，并一次创建完整任务图和依赖关系
 5. 各 worker 任务以单任务方式运行；成功时完成当前任务，遇到问题时阻塞当前任务，并在任务评论中写明原因、影响范围、所需帮助和建议动作
-6. `research-orchestrator` 定期查看当前项目的 Kanban 任务；对 blocked 任务决定补充输入、更新方案、解除阻塞、追加返工任务或调整依赖关系
+6. `research-orchestrator` 按 `project.json.monitoring.next_poll_at` 定期查看当前项目的 Kanban 任务；对 blocked 任务决定补充输入、更新方案、解除阻塞、追加返工任务或调整依赖关系
 7. 每个章节按搜索与证据整理、章节写作、章节校验的顺序推进；综合、结果校验和报告渲染任务在首次创建任务图时就已建立依赖关系
 8. 全部上游依赖完成后，综合、结果校验和报告渲染任务按依赖关系自动推进
 9. `synthesis-writer` 生成综合结果和结构化研究结果，`quality-reviewer` 校验结构化研究结果
-10. `research-orchestrator` 继续定期查看任务；结果阶段遇到 blocked 任务时，按同样方式处理
+10. `research-orchestrator` 继续按节流规则查看任务；结果阶段遇到 blocked 任务时，按同样方式处理
 11. `report-renderer` 渲染 HTML 报告
 12. `research-orchestrator` 读取报告产物，向用户汇总结果并完成本轮研究交付
 
@@ -2125,7 +2129,7 @@ report-renderer：渲染报告
 research-orchestrator：交付汇总与用户回复
 ```
 
-任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-orchestrator` 在当前会话中定期查看并处理这些任务。
+任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-orchestrator` 在当前会话中按节流规则定期查看并处理这些任务。
 
 ## 17.4 workspace 目录
 使用固定的项目总目录 `$HOME/.hermes/workspaces/deepresearch`。
@@ -2162,11 +2166,8 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 负责研究项目入口、边界确认、方案生成、workspace 管理、Kanban 任务创建、周期巡检、blocked 处理和交付汇总
 
 ### 17.5.2 依赖
-- Toolsets：`file`、`kanban`
-- Plugins：无
-- MCP：无
+- Toolsets：`file`、`kanban`、`terminal`
 - Skills：`deepresearch-orchestrator`
-- Hooks：无
 
 ### 17.5.3 阶段
 - 研究准备
@@ -2192,26 +2193,43 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 创建综合、结果校验和报告渲染任务
     - 建立完整依赖关系
   - 执行规则：
-    - 每个任务必须包含 `project_id`、`workspace_path`、`task_type`、`inputs`、`outputs`、`objective`、`constraints`、`acceptance_criteria` 和 `attempt`
+    - 每个任务必须包含 `project_id`、`workspace_path`、`task_type`、`assignee`、`skills`、`inputs`、`outputs`、`objective`、`constraints`、`acceptance_criteria` 和 `attempt`
     - 研究方案确认后一次创建完整任务图
     - 章节任务依赖链固定为 `search -> section_write -> section_review`
     - 综合任务依赖全部必需章节的 `section_review`
     - 结果校验任务依赖 `synthesis`
     - 报告渲染任务依赖 `result_review`
+    - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 skill
+    - `task_type`、`assignee` 和 `skills` 的对应关系固定为：
+      - `search` -> `search-worker` -> `deepresearch-search`
+      - `section_write` -> `section-writer` -> `deepresearch-section`
+      - `section_review` -> `quality-reviewer` -> `deepresearch-quality`
+      - `synthesis` -> `synthesis-writer` -> `deepresearch-synthesis`
+      - `result_review` -> `quality-reviewer` -> `deepresearch-quality`
+      - `report_render` -> `report-renderer` -> `deepresearch-report`
     - 完整任务图创建完成后，`project.json.stage` 更新为 `dispatching`
 - 周期巡检
-  - 输入：当前项目的 Kanban 任务、任务评论、已保存产物、用户补充信息
+  - 输入：当前项目的 Kanban 任务、状态变化任务评论、状态变化任务产物、用户补充信息
   - 输出：项目进度状态、blocked 任务清单、更新后的项目文件
   - 步骤：
-    - 定期查看当前项目的 `done`、`running` 和 `blocked` 任务
+    - 检查 `project.json.monitoring.next_poll_at`
+    - 到达巡检时间后查看当前项目的 `done`、`running`、`ready`、`todo` 和 `blocked` 任务
     - 对已通过的章节校验结果登记章节通过状态
     - 检查综合、结果校验和报告渲染任务是否按依赖正常推进
     - 更新 `project.json.stage`
+    - 更新 `project.json.monitoring`
   - 执行规则：
+    - 常规巡检间隔为 180 秒
     - 周期巡检只负责查看和记录任务推进情况，不为正常成功路径创建新任务
     - `project.json.stage` 必须与当前主阶段一致
     - 完整任务图创建完成后持续巡检，直到交付完成或用户明确暂停、停止项目
-    - 每轮巡检结束后，如项目未结束，立即进入下一轮巡检
+    - 当前时间早于 `project.json.monitoring.next_poll_at` 且没有用户补充信息时，不读取 Kanban 任务列表
+    - 每轮常规巡检最多读取一次任务列表
+    - 常规巡检只展开读取状态变化任务、`blocked` 任务和报告交付相关任务的评论与产物
+    - 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，只更新 `next_poll_at` 和状态摘要
+    - 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，等待到 `next_poll_at` 后再执行下一轮常规巡检
+    - 无状态变化时不得立即进入下一轮常规巡检
+    - 无状态变化时不得结束项目监督
     - 发现 `blocked` 任务后立即进入 blocked 处理，不等待用户再次提醒
     - 发现报告已生成且结果满足交付条件后立即进入交付汇总
 - blocked 处理
@@ -2251,6 +2269,11 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - `workspace_path`：项目 workspace 路径
 - `stage`：当前研究业务阶段，取值为 `preparing`、`dispatching`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`delivering`、`completed`
 - `current_report_version`：当前报告版本，取值为 `null` 或 `vNNN`
+- `monitoring`：巡检状态
+  - `poll_interval_seconds`：常规巡检间隔，固定为 `180`
+  - `next_poll_at`：下一次常规巡检时间，使用 ISO 8601 字符串
+  - `last_seen_task_status_digest`：上一轮任务状态摘要
+  - `last_poll_at`：上一轮实际巡检时间，使用 ISO 8601 字符串
 
 `scheme.json` 字段：
 - `research_goal`：研究目标和最终需要回答的问题
@@ -2277,6 +2300,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 - `workspace_path`：项目 workspace 路径
 - `task_type`：任务类型，取值为 `search`、`section_write`、`section_review`、`synthesis`、`result_review`、`report_render`
 - `assignee`：负责执行的 profile
+- `skills`：当前任务强制加载的 skill 列表，通过 `kanban_create.skills` 写入
 - `attempt`：当前任务尝试次数，首轮为 `1`
 - `retry_of_task_id`：可选，重跑任务对应的原任务编号
 - `inputs`：输入文件或目录，使用项目 workspace 内相对路径
@@ -2307,10 +2331,8 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
 
 ### 17.6.2 依赖
 - Toolsets：`web`、`browser`、`file`
-- Plugins：无
 - MCP：可选内部知识库、数据库、外部 API
 - Skills：`deepresearch-search`
-- Hooks：无
 
 联网搜索工具集配置：
 
@@ -2418,10 +2440,7 @@ cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/s
 
 ### 17.7.2 依赖
 - Toolsets：`file`
-- Plugins：无
-- MCP：无
 - Skills：`deepresearch-section`
-- Hooks：无
 
 ### 17.7.3 阶段
 - 章节写作
@@ -2496,10 +2515,7 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
 
 ### 17.8.2 依赖
 - Toolsets：`file`
-- Plugins：无
-- MCP：无
 - Skills：`deepresearch-quality`
-- Hooks：无
 
 ### 17.8.3 阶段
 - 章节校验
@@ -2599,10 +2615,7 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
 
 ### 17.9.2 依赖
 - Toolsets：`file`
-- Plugins：无
-- MCP：无
 - Skills：`deepresearch-synthesis`
-- Hooks：无
 
 ### 17.9.3 阶段
 - 综合与组装
@@ -2700,10 +2713,7 @@ cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-wr
 
 ### 17.10.2 依赖
 - Toolsets：`file`
-- Plugins：无
-- MCP：无
 - Skills：`deepresearch-report`
-- Hooks：无
 
 ### 17.10.3 阶段
 - 报告渲染
@@ -2773,7 +2783,6 @@ research-orchestrator config set API_SERVER_PORT 8643
 
 # 启动 Gateway
 research-orchestrator gateway install
-research-orchestrator gateway start
 
 # 验证 API 服务器是否可用
 curl -s http://127.0.0.1:8643/health

@@ -1,6 +1,6 @@
 ---
 name: deepresearch-synthesis
-description: 深度研究综合组装技能。用于 synthesis-writer profile 在章节校验通过后生成 synthesis.json，完成全局来源去重、跨章节洞察、建议、风险整理，并组装 result/research_result.json
+description: 深度研究综合组装技能。用于 synthesis-writer profile 在章节校验通过后生成 synthesis.json，完成全局来源合并、跨章节洞察、建议、风险整理，并组装 result/research_result.json
 version: 1.0.0
 metadata:
   hermes:
@@ -47,7 +47,7 @@ metadata:
 2. 确认全部必需章节的 `validation.json.status` 为 `passed`
 3. 读取全部已通过章节的 `research.json` 和 `section.json`
 4. 构建跨章节事实索引、证据链索引、来源索引、冲突清单和风险清单
-5. 对全局来源列表去重并建立 canonical `source_id` 映射
+5. 合并已纳入章节的来源列表并保留章节来源编号
 6. 生成执行摘要、核心结论、跨章节洞察和建议
 7. 汇总跨章节冲突和全局风险
 8. 保存 `synthesis/synthesis.json`
@@ -64,16 +64,16 @@ metadata:
 - 跨章节冲突必须保留冲突说明
 - 全局风险写入 `synthesis/synthesis.json`
 - `result/research_result.json` 只能组装已存在的章节、来源、证据和综合结果
-- 全局来源列表必须去重
+- 全局来源列表保留章节来源编号，不跨章节去重
 - 输出不得包含未完成内容、TODO、占位符或待确认文本
 - `result/research_result.json.sections` 按 `scheme.json.outline` 的章节顺序输出
 
-## Source Dedupe
-- 公开来源按规范化后的 URL 去重
-- 上传文件、内部知识库、数据库和 API 来源按 `document_id`、`locator` 和 `source_type` 去重
-- 同一来源重复出现时保留最早出现的 `source_id` 作为 canonical ID
-- 去重后必须把全局事实、证据链、综合结果和 `research_result.json.sections` 中的 `source_ids` 映射到 canonical ID
-- 无法确认是否重复的来源保留为独立来源
+## Source Merge
+- 全局来源列表由纳入综合结果的章节 `research.json.sources` 合并而成
+- 每个来源保留原章节 `source_id`
+- 不跨章节去重，不建立 canonical `source_id` 映射
+- 全局事实、证据链、综合结果和 `research_result.json.sections` 中的 `source_ids` 使用原章节来源编号
+- 同一外部来源在不同章节重复出现时保留为多条章节来源记录
 
 ## synthesis.json
 - `executive_summary`：执行摘要
@@ -114,8 +114,8 @@ metadata:
   - `text`：事实内容
   - `source_ids`：来源编号
   - `evidence_chain_ids`：证据链编号
-- `sources`：全局来源列表
-  - `source_id`：canonical 来源编号，沿用去重后保留的 `src-<section_id>-NNN`
+- `sources`：全局来源列表，由纳入综合结果的章节来源合并而成
+  - `source_id`：章节来源编号，沿用 `src-<section_id>-NNN`
   - `title`：标题
   - `url`：公开网页最终 URL
   - `document_id`：非公开网页来源的文档编号
@@ -143,10 +143,10 @@ metadata:
   - `question_to_answer`：待回答问题
   - `suggested_action`：建议动作
   - `required_user_input`：`true` 或 `false`
-- `reason`、`help_needed` 和 `suggested_action` 必须指明缺失章节、断裂引用或无法判定的去重对象
+- `reason`、`help_needed` 和 `suggested_action` 必须指明缺失章节、断裂引用或无法合并的来源对象
 
 ## Handoff Rules
-- 任一必需章节未通过校验、缺少输入文件、全局引用断裂或无法确定 canonical 来源映射时，不得继续组装最终结果
+- 任一必需章节未通过校验、缺少输入文件、全局引用断裂或来源列表无法合并时，不得继续组装最终结果
 - 能形成完整、可校验的 `synthesis.json` 和 `research_result.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
 - 需要返工、补齐章节、补齐来源信息或用户判断时，整理统一反馈对象
 - 在 Kanban 任务上下文内：
@@ -159,7 +159,7 @@ metadata:
 
 ## Verification
 - 所有必需章节的章节校验均为通过状态
-- 全局来源列表已去重
+- 全局来源列表已合并章节来源并保留原章节来源编号
 - 全局事实引用的 `source_ids` 存在
 - 全局证据链引用的 `fact_ids` 和 `source_ids` 存在
 - 核心结论、跨章节洞察和建议均关联证据链和来源

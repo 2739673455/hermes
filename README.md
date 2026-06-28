@@ -113,8 +113,7 @@ Hermes 提供了一个基于浏览器的界面。
 
 ```bash
 hermes dashboard                       # 启动，自动打开浏览器 http://127.0.0.1:9119
-hermes dashboard --port 8080           # 自定义端口
-hermes dashboard --tui                 # 启用浏览器内 Chat 标签页
+hermes dashboard --port 9119           # 自定义端口
 hermes dashboard --status              # 查看运行状态
 hermes dashboard --stop                # 停止运行
 hermes dashboard &>/dev/null & disown  # 后台运行并脱离终端
@@ -2039,7 +2038,7 @@ auxiliary:
 # 创建 orchestrator profile
 hermes profile create orchestrator --clone
 # 启用 kanban 工具
-orchestrator config set toolsets '["hermes-cli", "kanban"]'
+orchestrator config set toolsets '["kanban"]'
 # 配置为 Kanban 编排器
 hermes config set kanban.orchestrator_profile orchestrator
 # 启用自动拆解
@@ -2074,7 +2073,7 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - `search-worker`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
 - `section-writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
 - `quality-reviewer`：章节校验、结果校验、证据引用检查、未完成内容检查和返工建议
-- `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源去重并组装结构化研究结果
+- `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源合并并组装结构化研究结果
 - `report-renderer`：基于结构化研究结果生成 HTML
 
 ## 17.3 流程与任务图
@@ -2132,16 +2131,16 @@ research-orchestrator：交付汇总与用户回复
 任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-orchestrator` 在当前会话中按节流规则定期查看并处理这些任务。
 
 ## 17.4 workspace 目录
-使用固定的项目总目录 `$HOME/.hermes/workspaces/deepresearch`。
+使用固定的项目总目录 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch`。
 
-`research-orchestrator` 在研究方案确认后创建项目目录；未显式指定项目总目录时，使用 `$HOME/.hermes/workspaces/deepresearch`。
+`research-orchestrator` 在研究方案确认后创建项目目录；未显式指定项目总目录时，使用 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch`。
 
-每个研究项目在项目总目录下创建目录 `$HOME/.hermes/workspaces/deepresearch/<project_id>/`，`project_id` 使用 `dr-YYYYMMDD-HHMMSS-<slug>` 格式。`slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符。
+每个研究项目在项目总目录下创建目录 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/`，`project_id` 使用 `dr-YYYYMMDD-HHMMSS-<slug>` 格式。`slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符。
 
 workspace 结构：
 
 ```text
-$HOME/.hermes/workspaces/deepresearch/<project_id>/
+$HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
   project.json                  # 项目编号、workspace 路径、当前研究业务阶段和当前报告版本
   scheme.json                   # 研究方案
   sections/
@@ -2168,7 +2167,6 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 ### 17.5.2 依赖
 - Toolsets：`file`、`kanban`、`terminal`
 - Skills：`deepresearch-orchestrator`
-- Worker Skills：`deepresearch-search`、`deepresearch-section`、`deepresearch-quality`、`deepresearch-synthesis`、`deepresearch-report`
 
 ### 17.5.3 阶段
 - 研究准备
@@ -2322,7 +2320,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 ### 17.5.7 Profile 配置
 ```bash
 hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务创建、周期巡检、blocked 处理和交付汇总"
-research-orchestrator config set toolsets '["hermes-cli", "kanban"]'
+research-orchestrator config set toolsets '["kanban"]'
 cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/research/
 ```
 
@@ -2545,7 +2543,7 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
   - 输出：`result/validation.json`
   - 步骤：
     - 检查所有章节校验是否通过
-    - 检查全局来源列表是否去重
+    - 检查全局来源列表是否保留章节来源编号
     - 检查事实、洞察、建议和章节风险说明是否与章节证据链一致
     - 检查报告渲染输入是否存在未完成内容或占位符
     - 生成校验结果和返工反馈
@@ -2612,7 +2610,7 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
 
 ## 17.9 `synthesis-writer`
 ### 17.9.1 职责
-负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，完成全局来源去重，并把所有章节、来源、证据和综合结果组装为 `result/research_result.json`
+负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，合并章节来源，并把所有章节、来源、证据和综合结果组装为 `result/research_result.json`
 
 ### 17.9.2 依赖
 - Toolsets：`file`
@@ -2625,7 +2623,7 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
   - 步骤：
     - 构建跨章节事实索引、冲突清单和风险清单
     - 生成执行摘要、核心结论、跨章节洞察和建议
-    - 完成全局来源去重
+    - 合并章节来源列表
     - 组装 `result/research_result.json`
   - 执行规则：
     - 只使用已保存的章节、来源、事实和证据链
@@ -2635,7 +2633,7 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
     - 跨章节冲突必须保留冲突说明
     - 全局风险写入 `synthesis/synthesis.json`
     - `result/research_result.json` 只能组装已存在的章节、来源、证据和综合结果
-    - 全局来源列表必须去重
+    - 全局来源列表保留章节来源编号，不跨章节去重
     - 不得新增事实、来源、判断或证据链
     - `result/research_result.json.sections` 按 `scheme.json.outline` 的章节顺序输出
     - 当前任务成功时先保存 `synthesis/synthesis.json` 和 `result/research_result.json`，再完成当前任务
@@ -2682,8 +2680,8 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
   - `text`：可复核事实内容
   - `source_ids`：来源编号
   - `evidence_chain_ids`：证据链编号
-- `sources`：全局来源列表
-  - `source_id`：去重后保留的 canonical 来源编号，格式沿用 `src-<section_id>-NNN`
+- `sources`：全局来源列表，由纳入综合结果的章节来源合并而成
+  - `source_id`：章节来源编号，格式沿用 `src-<section_id>-NNN`
   - `title`：标题
   - `url`：公开网页最终 URL
   - `document_id`：上传文件、内部知识库、数据库或外部 API 文档编号
@@ -2704,7 +2702,7 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
 
 ### 17.9.5 Profile 配置
 ```bash
-hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源去重、全局风险整理和结构化研究结果组装"
+hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源合并、全局风险整理和结构化研究结果组装"
 cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/research/
 ```
 

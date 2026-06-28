@@ -42,12 +42,15 @@ metadata:
 - 不得在首次巡检、单次 blocked 处理或单轮状态汇报后自行结束当前项目监督
 
 ## Workspace Rules
-- 项目总目录固定为 `$HOME/.hermes/workspaces/deepresearch`
-- 项目目录格式为 `$HOME/.hermes/workspaces/deepresearch/<project_id>`
+- 项目总目录固定为 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch`
+- 项目目录格式为 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>`
 - `project_id` 格式为 `dr-YYYYMMDD-HHMMSS-<slug>`
 - `slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符
 - 项目目录至少包含 `sections/`、`synthesis/`、`result/` 和 `reports/`
 - 所有任务输入输出路径都使用项目 workspace 内相对路径
+- 所有 worker 任务的 Kanban workspace 必须绑定为 `dir:<workspace_path>`
+- 不得使用默认 `scratch` workspace 承载 deepresearch 任务产物
+- worker 任务产物必须写入项目持久 workspace，不能写入临时目录
 
 ## Monitoring Rules
 - 常规巡检间隔为 180 秒
@@ -93,11 +96,15 @@ metadata:
   - 任务依赖关系
 - 步骤：
   1. 读取已确认的 `scheme.json`
-  2. 为每个规划章节创建 `search`、`section_write` 和 `section_review` 任务
-  3. 创建 `synthesis`、`result_review` 和 `report_render` 任务
-  4. 为每个任务写入统一任务契约
-  5. 建立完整依赖关系
-  6. 更新 `project.json.stage`
+  2. 为每个规划章节创建 `search` 任务，`parents=[]`
+  3. 为每个规划章节创建 `section_write` 任务，`parents=[对应 search 任务 ID]`
+  4. 为每个规划章节创建 `section_review` 任务，`parents=[对应 section_write 任务 ID]`
+  5. 创建 `synthesis` 任务，`parents=[全部必需章节的 section_review 任务 ID]`
+  6. 创建 `result_review` 任务，`parents=[synthesis 任务 ID]`
+  7. 创建 `report_render` 任务，`parents=[result_review 任务 ID]`
+  8. 为每个任务写入统一任务契约
+  9. 更新 `project.json.stage`
+  10. 立即进入 `Stage: 周期巡检`
 - 规则：
   - 研究方案确认后一次创建完整任务图
   - 每个章节的依赖链固定为 `search -> section_write -> section_review`
@@ -106,6 +113,12 @@ metadata:
   - `report_render` 依赖 `result_review`
   - 完整任务图创建完成后，`project.json.stage` 设为 `dispatching`
   - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 worker profile 的专属 skill
+  - 每个 worker 任务必须在 `kanban_create` 中设置 `workspace_kind="dir"` 和 `workspace_path="<workspace_path>"`
+  - 创建任务时必须通过 `parents` 参数建立依赖，不能先创建全部任务再用 `kanban_link` 补链
+  - 依赖任务的 `parents` 必须使用刚创建任务返回的真实任务 ID
+  - `section_write`、`section_review`、`synthesis`、`result_review` 和 `report_render` 任务不得在没有 `parents` 的情况下创建
+  - `synthesis.parents` 只包含必需章节的 `section_review` 任务 ID；非必需章节通过且可纳入时由后续综合规则处理
+  - 任务图创建完成后不得只汇报任务表就停止，必须继续执行周期巡检
   - 专属 skill 映射固定为：
     - `search` -> `search-worker` -> `deepresearch-search`
     - `section_write` -> `section-writer` -> `deepresearch-section`
@@ -136,6 +149,8 @@ metadata:
   - 周期巡检不代替 worker 执行正文工作
   - `project.json.stage` 必须与当前主阶段一致
   - 未到 `next_poll_at` 时不执行常规巡检
+  - 任务图创建完成后的首次巡检必须立即执行一次，用于确认任务状态、依赖状态和首批运行任务
+  - 首次巡检后如果没有 `blocked`、报告产物或用户补充信息，则写入状态摘要并设置下一次 `next_poll_at`
   - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，设置下一次 `next_poll_at`
   - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，等待到 `next_poll_at` 后再执行下一轮常规巡检
   - 无状态变化时不得立即进入下一轮常规巡检
@@ -277,9 +292,20 @@ metadata:
 - 研究方案确认后一次创建完整任务图
 - worker 任务只处理单个执行阶段
 - worker 任务必须通过 `kanban_create.skills` 加载对应 worker profile 的专属 skill
+- worker 任务必须通过 `kanban_create.workspace_kind="dir"` 和 `kanban_create.workspace_path="<workspace_path>"` 绑定项目持久 workspace
+- worker 任务依赖必须通过 `kanban_create.parents` 在创建时注册
 - 正常成功路径不追加创建新任务
 - worker 进入 `blocked` 时，不直接向用户提问
 - 需要用户回答时，由你在当前会话中提问
+- 完整任务图创建完成后继续巡检，不把任务表汇报当作项目结束
+
+## Pitfalls
+- 依赖信息只写入任务正文不会创建实际依赖链；将父任务 ID 传入 `kanban_create.parents` 才会注册依赖
+- 如果依赖任务创建时未传 `parents`，调度器可能在补链前派发 worker
+- 不要先创建全部任务再用 `kanban_link` 补链
+- `scratch` 是临时 workspace，deepresearch 产物不得写入 scratch
+- 搜索、写作、校验、综合和渲染任务都必须使用同一个项目持久 workspace
+- 任务图创建完成后不得停止在任务清单展示，必须继续执行周期巡检
 
 ## Verification
 - `project.json` 和 `scheme.json` 与当前用户确认内容一致
@@ -287,6 +313,9 @@ metadata:
 - 当前项目的 worker 任务都带有对应 `skills`
 - 无状态变化的常规巡检不连续执行
 - 所有任务输入输出路径都指向项目 workspace 内相对路径
+- 所有 worker 任务都设置了 `workspace_kind="dir"` 和 `workspace_path="<workspace_path>"`
+- 所有依赖任务都在 `kanban_create.parents` 中写入真实父任务 ID
+- 完整任务图创建完成后已执行首次周期巡检
 - 所有 blocked 任务都有统一反馈对象
 - 结果交付前 `result/validation.json.status` 为 `passed`
 - 结果交付前 `reports/index.json` 和 `reports/current.html` 存在

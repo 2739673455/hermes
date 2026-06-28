@@ -2168,6 +2168,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 ### 17.5.2 依赖
 - Toolsets：`file`、`kanban`、`terminal`
 - Skills：`deepresearch-orchestrator`
+- Worker Skills：`deepresearch-search`、`deepresearch-section`、`deepresearch-quality`、`deepresearch-synthesis`、`deepresearch-report`
 
 ### 17.5.3 阶段
 - 研究准备
@@ -2322,7 +2323,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 ```bash
 hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务创建、周期巡检、blocked 处理和交付汇总"
 research-orchestrator config set toolsets '["hermes-cli", "kanban"]'
-cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/research/
+cp -R deepresearch/skills/deepresearch-* ~/.hermes/profiles/research-orchestrator/skills/research/
 ```
 
 ## 17.6 `search-worker`
@@ -2773,32 +2774,64 @@ research-orchestrator chat --skills deepresearch-orchestrator
 > 研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠
 ```
 
-接入 Open-WebUI：https://hermes-agent.nousresearch.com/docs/user-guide/messaging/open-webui
+#### 17.10.6.1 接入 Open-WebUI
+https://hermes-agent.nousresearch.com/docs/user-guide/messaging/open-webui
+
+启动 API 服务器：
 
 ```bash
-# 启动 API 服务器
 research-orchestrator config set API_SERVER_ENABLED true
 research-orchestrator config set API_SERVER_KEY 123123
 research-orchestrator config set API_SERVER_PORT 8643
+```
 
-# 启动 Gateway
+启用 API 服务器的 kanban 工具：
+
+```bash
+research-orchestrator config edit
+```
+
+在配置中加入：
+
+```diff
+platform_toolsets:
++  api_server:
++    - hermes-api-server
++    - kanban
+```
+
+启动 Gateway：
+
+```bash
 research-orchestrator gateway install
+```
 
-# 验证 API 服务器是否可用
+验证 API 服务器是否可用：
+
+```bash
 curl -s http://127.0.0.1:8643/health
 # {"status": "ok", ...}
 
 curl -s -H "Authorization: Bearer 123123" http://127.0.0.1:8643/v1/models
 # {"object":"list","data":[{"id":"hermes-agent", ...}]}
+```
 
-# 启动 Open-WebUI
+启动 Open-WebUI：
+
+```bash
 cd docker
 docker compose up -d
+```
 
-# 访问 Open-WebUI
+访问 Open-WebUI：
+
+```text
 http://localhost:8080
+```
 
-# 可选：在 Open-WebUI 中展示 Hermes 工具调用
+可选：在 Open-WebUI 中展示 Hermes 工具调用：
+
+```text
 点击右上角用户头像 ->
 -> 管理员面板
 -> 设置

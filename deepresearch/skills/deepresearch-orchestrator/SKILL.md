@@ -99,6 +99,7 @@ metadata:
   - `report_render` 依赖 `result_review`
   - 完整任务图创建完成后，`project.json.stage` 设为 `dispatching`
   - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 skill
+  - 当前 profile 必须能看到这些 worker skill 名称
   - `task_type`、`assignee` 和 `skills` 的对应关系固定为：
     - `search` -> `search-worker` -> `deepresearch-search`
     - `section_write` -> `section-writer` -> `deepresearch-section`
@@ -270,6 +271,7 @@ metadata:
 - 研究方案确认后一次创建完整任务图
 - worker 任务只处理单个执行阶段
 - worker 任务必须通过 `kanban_create.skills` 加载对应 skill
+- `kanban_create.skills` 只能使用当前 profile 已安装的 deepresearch skill 名称
 - 正常成功路径不追加创建新任务
 - worker 进入 `blocked` 时，不直接向用户提问
 - 需要用户回答时，由你在当前会话中提问

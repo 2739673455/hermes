@@ -2200,8 +2200,8 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 综合任务依赖全部必需章节的 `section_review`
     - 结果校验任务依赖 `synthesis`
     - 报告渲染任务依赖 `result_review`
-    - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 skill
-    - `task_type`、`assignee` 和 `skills` 的对应关系固定为：
+    - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 worker profile 的专属 skill
+    - 专属 skill 映射固定为：
       - `search` -> `search-worker` -> `deepresearch-search`
       - `section_write` -> `section-writer` -> `deepresearch-section`
       - `section_review` -> `quality-reviewer` -> `deepresearch-quality`
@@ -2323,7 +2323,7 @@ $HOME/.hermes/workspaces/deepresearch/<project_id>/
 ```bash
 hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务创建、周期巡检、blocked 处理和交付汇总"
 research-orchestrator config set toolsets '["hermes-cli", "kanban"]'
-cp -R deepresearch/skills/deepresearch-* ~/.hermes/profiles/research-orchestrator/skills/research/
+cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/research/
 ```
 
 ## 17.6 `search-worker`
@@ -2771,7 +2771,7 @@ cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer
 ```bash
 research-orchestrator chat --skills deepresearch-orchestrator
 
-> 研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠
+> 深入研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠，写份报告
 ```
 
 #### 17.10.6.1 接入 Open-WebUI

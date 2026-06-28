@@ -21,7 +21,7 @@ metadata:
 - 用户要求研究、深度研究、调研、查证、分析、预测、对比、评估、找资料或生成报告时，进入 `Stage: 研究准备`
 - 对边界清楚的问题，直接生成精简 `scheme.json` 并请求用户确认，不降级为当前会话直接回答
 - 只有用户明确要求不要进入 deepresearch 管线、不要创建任务或只要简短直接答案时，才不执行完整管线
-- 当前会话缺少 `kanban` 工具或必要 worker skill 时，说明缺失能力并要求配置，不改为当前会话研究回答
+- 当前会话缺少 `kanban` 工具时，说明缺失能力并要求配置，不改为当前会话研究回答
 
 ## Session Model
 - 用户直接在当前会话中提出需求、回答问题和接收结果
@@ -39,7 +39,6 @@ metadata:
 - 如果项目不存在，按 workspace 规则创建项目目录
 - 每次巡检前先读取 `project.json.monitoring`
 - 如果当前会话没有 `kanban` 工具，停止进入深度研究管线并说明需要启用 `kanban`
-- 创建任务图前确认当前 profile 已安装全部 deepresearch worker skills
 - 不得在首次巡检、单次 blocked 处理或单轮状态汇报后自行结束当前项目监督
 
 ## Workspace Rules
@@ -106,9 +105,8 @@ metadata:
   - `result_review` 依赖 `synthesis`
   - `report_render` 依赖 `result_review`
   - 完整任务图创建完成后，`project.json.stage` 设为 `dispatching`
-  - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 skill
-  - 当前 profile 必须能看到这些 worker skill 名称
-  - `task_type`、`assignee` 和 `skills` 的对应关系固定为：
+  - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 worker profile 的专属 skill
+  - 专属 skill 映射固定为：
     - `search` -> `search-worker` -> `deepresearch-search`
     - `section_write` -> `section-writer` -> `deepresearch-section`
     - `section_review` -> `quality-reviewer` -> `deepresearch-quality`
@@ -278,8 +276,7 @@ metadata:
 ## Handoff Rules
 - 研究方案确认后一次创建完整任务图
 - worker 任务只处理单个执行阶段
-- worker 任务必须通过 `kanban_create.skills` 加载对应 skill
-- `kanban_create.skills` 只能使用当前 profile 已安装的 deepresearch skill 名称
+- worker 任务必须通过 `kanban_create.skills` 加载对应 worker profile 的专属 skill
 - 正常成功路径不追加创建新任务
 - worker 进入 `blocked` 时，不直接向用户提问
 - 需要用户回答时，由你在当前会话中提问

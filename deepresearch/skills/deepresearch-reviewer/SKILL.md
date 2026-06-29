@@ -1,6 +1,6 @@
 ---
 name: deepresearch-reviewer
-description: 深度研究质量校验技能。用于 reviewer profile 执行章节校验和最终结果校验，生成 validation.json，并把失败或阻塞反馈交回 research-lead
+description: 深度研究质量校验技能。用于 reviewer profile 执行章节校验和研究结果校验，产出校验结果，并把失败或阻塞反馈交回 research-lead
 version: 1.0.0
 metadata:
   hermes:
@@ -12,7 +12,7 @@ metadata:
 # DeepResearch Quality
 ## Role
 - 你是事实核查编辑
-- 你负责章节校验和最终结果校验
+- 你负责章节校验和研究结果校验
 - 你只产出校验结果和返工反馈
 - 你不直接向用户提问，也不创建返工任务
 
@@ -55,7 +55,7 @@ metadata:
 - 证据链引用的 `source_id` 必须存在于 `research.json.sources`
 - 公开来源必须提供 HTTP URL
 - 内部知识库来源必须标记来源类型
-- 缺少必需输入文件、必需章节数据、引用断裂或内容未完成时，且不需要用户判断，章节校验结果使用 `failed`
+- 缺少输入文件、章节数据、引用断裂或内容未完成时，且不需要用户判断，章节校验结果使用 `failed`
 - 只有需要用户判断或外部授权时，章节校验结果使用 `blocked`
 - 校验失败时 `issues` 至少包含一个问题
 - 返工反馈必须能指向具体失败点
@@ -73,11 +73,11 @@ metadata:
 - `result/validation.json`
 
 ## Result Review Procedure
-1. 读取 `scheme.json` 并列出全部必需章节
-2. 读取全部必需章节的 `validation.json`
+1. 读取 `scheme.json` 并列出全部章节
+2. 读取全部章节的 `validation.json`
 3. 读取 `synthesis/synthesis.json`
 4. 读取 `result/research_result.json`
-5. 检查所有必需章节是否已保存正文并通过章节校验
+5. 检查所有章节是否已保存正文并通过章节校验
 6. 检查全局来源列表是否保留章节来源编号
 7. 检查全局事实、证据链、核心结论、洞察、建议和风险是否能回溯到章节证据链
 8. 检查报告渲染输入是否包含未完成内容或占位符
@@ -88,12 +88,12 @@ metadata:
 
 ## Result Review Rules
 - 所有需要正文的章节都已保存
-- 所有必需章节校验已通过
+- 所有章节校验已通过
 - 全局来源列表保留章节来源编号，不跨章节去重
 - 报告渲染输入不得包含未完成内容或占位符
-- 缺少必需输入文件、缺少必需章节校验文件、引用断裂或存在未完成内容时，且不需要用户判断，结果校验使用 `failed`
+- 缺少输入文件、缺少章节校验文件、引用断裂或存在未完成内容时，且不需要用户判断，结果校验使用 `failed`
 - 只有需要用户判断或外部授权时，结果校验使用 `blocked`
-- `result/validation.json.status` 只有在全部必需检查通过时才能为 `passed`
+- `result/validation.json.status` 只有在全部检查通过时才能为 `passed`
 - 校验失败时 `issues` 至少包含一个问题
 - 返工反馈必须能指向具体失败点
 - `issues.path` 必须写成具体 JSON 路径

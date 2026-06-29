@@ -1,6 +1,6 @@
 ---
 name: deepresearch-writer
-description: 深度研究章节写作技能。用于 writer profile 根据单章 research.json 写出 section.json，生成章节正文、关键发现、表格、图表说明、证据链引用和章节风险说明
+description: 深度研究章节写作技能。用于 writer profile 根据单章研究材料写出章节正文、关键发现、表格、图表说明、证据链引用和章节风险说明
 version: 1.0.0
 metadata:
   hermes:
@@ -43,7 +43,6 @@ metadata:
   - `objective`
   - `key_questions`
   - `evidence_requirements`
-  - `required`
 - 读取全局：
   - `scope`
   - `risk_boundary`

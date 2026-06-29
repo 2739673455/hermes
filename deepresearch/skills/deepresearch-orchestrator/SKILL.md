@@ -30,8 +30,9 @@ metadata:
 - worker 任务只承担单个执行阶段
 - worker 成功时把当前任务推进到 `done`
 - worker 无法继续时把当前任务推进到 `blocked`
-- 你按 `project.json.monitoring.next_poll_at` 定期查看当前项目任务，重点处理状态变化和 `blocked`
-- 完整任务图创建完成后，你持续执行“节流巡检 -> blocked 处理 -> 节流巡检”
+- 你默认每 180 秒查看一次当前项目任务，重点处理状态变化和 `blocked`
+- 完整任务图创建完成后，你在当前会话内持续执行“查看任务状态 -> 处理 `blocked` -> `sleep 180` -> 下一轮巡检”
+- 当前会话在项目监督期间保持存活；仍有未完成任务时，在当前会话内默认 `sleep 180` 秒后继续下一轮巡检
 - 无状态变化不是项目结束条件
 - 只有在项目已完成交付、用户明确停止研究或用户明确暂停研究时，你才结束项目监督
 
@@ -55,16 +56,15 @@ metadata:
 - worker 任务产物必须写入项目持久 workspace，不能写入临时目录
 
 ## Monitoring Rules
-- 常规巡检间隔为 180 秒
-- `project.json.monitoring.poll_interval_seconds` 固定为 `180`
-- `project.json.monitoring.next_poll_at` 是下一次常规巡检时间，使用 ISO 8601 字符串
+- 默认常规巡检间隔为 180 秒
+- `project.json.monitoring.passed_section_ids` 记录已通过章节校验的章节编号
 - `project.json.monitoring.last_seen_task_status_digest` 记录上一轮任务状态摘要
-- 当前时间早于 `next_poll_at` 且没有用户补充信息时，不读取 Kanban 任务列表
+- 周期巡检在当前会话里通过 `sleep 180` 控制两轮之间的等待时间
 - 每轮常规巡检最多读取一次任务列表
 - 常规巡检只展开读取状态变化任务、`blocked` 任务和报告交付相关任务的评论与产物
-- 出现 `blocked` 任务、报告已生成、用户补充信息或任务状态摘要变化时，立即处理
-- 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，只更新 `next_poll_at` 和状态摘要
-- 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，等待到 `next_poll_at` 后再执行下一轮常规巡检
+- 出现 `blocked` 任务、报告已生成或任务状态摘要变化时，立即处理
+- 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，只更新状态摘要
+- 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，`sleep 180` 后再执行下一轮常规巡检
 - 无状态变化不是完成、暂停或停止
 
 ## Stage: 研究准备
@@ -101,7 +101,7 @@ metadata:
   2. 为每个规划章节创建 `search` 任务，`parents=[]`
   3. 为每个规划章节创建 `section_write` 任务，`parents=[对应 search 任务 ID]`
   4. 为每个规划章节创建 `section_review` 任务，`parents=[对应 section_write 任务 ID]`
-  5. 创建 `synthesis` 任务，`parents=[全部必需章节的 section_review 任务 ID]`
+  5. 创建 `synthesis` 任务，`parents=[全部章节的 section_review 任务 ID]`
   6. 创建 `result_review` 任务，`parents=[synthesis 任务 ID]`
   7. 创建 `report_render` 任务，`parents=[result_review 任务 ID]`
   8. 为每个任务写入统一任务契约
@@ -110,7 +110,7 @@ metadata:
 - 规则：
   - 研究方案确认后一次创建完整任务图
   - 每个章节的依赖链固定为 `search -> section_write -> section_review`
-  - `synthesis` 依赖全部必需章节的 `section_review`
+  - `synthesis` 依赖全部章节的 `section_review`
   - `result_review` 依赖 `synthesis`
   - `report_render` 依赖 `result_review`
   - 完整任务图创建完成后，`project.json.stage` 设为 `dispatching`
@@ -119,7 +119,7 @@ metadata:
   - 创建任务时必须通过 `parents` 参数建立依赖，不能先创建全部任务再用 `kanban_link` 补链
   - 依赖任务的 `parents` 必须使用刚创建任务返回的真实任务 ID
   - `section_write`、`section_review`、`synthesis`、`result_review` 和 `report_render` 任务不得在没有 `parents` 的情况下创建
-  - `synthesis.parents` 只包含必需章节的 `section_review` 任务 ID；非必需章节通过且可纳入时由后续综合规则处理
+  - `synthesis.parents` 只包含全部章节的 `section_review` 任务 ID
   - 任务图创建完成后不得只汇报任务表就停止，必须继续执行周期巡检
   - 专属 skill 映射固定为：
     - `search` -> `searcher` -> `deepresearch-searcher`
@@ -139,8 +139,8 @@ metadata:
   - blocked 任务清单
   - 更新后的 `project.json`
 - 步骤：
-  1. 检查 `project.json.monitoring.next_poll_at`
-  2. 到达巡检时间后查看当前项目的 `done`、`running`、`ready`、`todo` 和 `blocked` 任务
+  1. 读取 `project.json.monitoring`
+  2. 查看当前项目的 `done`、`running`、`ready`、`todo` 和 `blocked` 任务
   3. 对已通过的章节校验结果登记章节通过状态
   4. 检查综合、结果校验和报告渲染任务是否按依赖正常推进
   5. 更新 `project.json.stage`
@@ -150,11 +150,11 @@ metadata:
   - 周期巡检不为正常成功路径创建新任务
   - 周期巡检不代替 worker 执行正文工作
   - `project.json.stage` 必须与当前主阶段一致
-  - 未到 `next_poll_at` 时不执行常规巡检
   - 任务图创建完成后的首次巡检必须立即执行一次，用于确认任务状态、依赖状态和首批运行任务
-  - 首次巡检后如果没有 `blocked`、报告产物或用户补充信息，则写入状态摘要并设置下一次 `next_poll_at`
-  - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，设置下一次 `next_poll_at`
-  - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，等待到 `next_poll_at` 后再执行下一轮常规巡检
+  - 首次巡检后如果没有 `blocked`、报告产物，则写入状态摘要
+  - 章节校验通过后，将对应 `section_id` 写入 `project.json.monitoring.passed_section_ids`
+  - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，更新 `last_seen_task_status_digest`
+  - 每轮常规巡检结束后，若无状态变化且仍有未完成任务，在当前会话内默认 `sleep 180` 秒，再执行下一轮常规巡检
   - 无状态变化时不得立即进入下一轮常规巡检
   - 无状态变化时不得结束项目监督
   - 周期巡检发现 `blocked` 任务后，立即转入 blocked 处理，不等待用户再次提醒
@@ -224,10 +224,8 @@ metadata:
 - `stage`：当前研究业务阶段，取值为 `preparing`、`dispatching`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`delivering` 或 `completed`
 - `current_report_version`：当前报告版本，取值为 `null` 或 `vNNN`
 - `monitoring`：巡检状态
-  - `poll_interval_seconds`：常规巡检间隔，固定为 `180`
-  - `next_poll_at`：下一次常规巡检时间，使用 ISO 8601 字符串
+  - `passed_section_ids`：已通过章节校验的章节编号列表
   - `last_seen_task_status_digest`：上一轮任务状态摘要
-  - `last_poll_at`：上一轮实际巡检时间，使用 ISO 8601 字符串
 
 ## scheme.json
 - `research_goal`：研究目标和最终需要回答的问题
@@ -258,7 +256,6 @@ metadata:
   - `objective`：章节目标
   - `key_questions`：本章必须回答的关键问题
   - `evidence_requirements`：本章证据要求
-  - `required`：是否为必需章节，取值为 `true` 或 `false`
 - `deliverables`：最终交付内容
   - `type`：交付物类型
   - `required`：是否必需
@@ -308,7 +305,7 @@ metadata:
 - blocked 处理完成后的执行工作必须继续由 worker 承担
 - 当前 blocked 任务可以继续时优先 `unblock` 原任务
 - 需要上游返工时，创建带 `retry_of_task_id` 的最小返工任务并改挂受影响依赖
-- 完整任务图创建完成后继续巡检，不把任务表汇报当作项目结束
+- 完整任务图创建完成后继续在当前会话中巡检，不把任务表汇报当作项目结束
 
 ## Pitfalls
 - 依赖信息只写入任务正文不会创建实际依赖链；将父任务 ID 传入 `kanban_create.parents` 才会注册依赖
@@ -317,6 +314,7 @@ metadata:
 - `scratch` 是临时 workspace，deepresearch 产物不得写入 scratch
 - 搜索、写作、校验、综合和渲染任务都必须使用同一个项目持久 workspace
 - 任务图创建完成后不得停止在任务清单展示，必须继续执行周期巡检
+- 不要忙等或高频轮询；无状态变化时应默认 `sleep 180` 秒
 - 不要在 blocked 处理里自己补写 `research.json`、`section.json`、`validation.json`、`synthesis.json`、`research_result.json` 或报告文件
 - 需要修复业务产物时，应把工作交还给 `searcher`、`writer`、`reviewer`、`synthesizer` 或 `renderer`
 
@@ -324,7 +322,8 @@ metadata:
 - `project.json` 和 `scheme.json` 与当前用户确认内容一致
 - 当前项目的 worker 任务都带有统一任务契约
 - 当前项目的 worker 任务都带有对应 `skills`
-- 无状态变化的常规巡检不连续执行
+- 已通过章节校验的章节都已写入 `project.json.monitoring.passed_section_ids`
+- 无状态变化的常规巡检在两轮之间默认 `sleep 180` 秒
 - 所有任务输入输出路径都指向项目 workspace 内相对路径
 - 所有 worker 任务都设置了 `workspace_kind="dir"` 和 `workspace_path="<workspace_path>"`
 - 所有依赖任务都在 `kanban_create.parents` 中写入真实父任务 ID

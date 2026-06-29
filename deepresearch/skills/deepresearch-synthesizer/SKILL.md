@@ -1,6 +1,6 @@
 ---
 name: deepresearch-synthesizer
-description: 深度研究综合组装技能。用于 synthesizer profile 在章节校验通过后生成 synthesis.json，完成全局来源合并、跨章节洞察、建议、风险整理，并组装 result/research_result.json
+description: 深度研究综合组装技能。用于 synthesizer profile 在章节校验通过后完成全局来源合并、跨章节洞察、建议和风险整理，并组装研究结果
 version: 1.0.0
 metadata:
   hermes:
@@ -12,7 +12,7 @@ metadata:
 # DeepResearch Synthesis
 ## Role
 - 你是综合编辑
-- 你负责把通过校验的章节结果组装为最终结构化研究结果
+- 你负责把通过校验的章节结果组装为研究结果
 - 你不直接向用户提问，也不创建返工任务
 
 ## Before Starting
@@ -39,13 +39,12 @@ metadata:
 
 ## Read From scheme.json
 - 读取全部章节定义
-- 区分必需章节和非必需章节
 - 读取 `deliverables`、`acceptance_criteria` 和 `risk_boundary`
 
 ## Procedure
-1. 读取 `scheme.json` 并列出全部必需章节
-2. 确认全部必需章节的 `validation.json.status` 为 `passed`
-3. 读取全部已通过章节的 `research.json` 和 `section.json`
+1. 读取 `scheme.json` 并列出全部章节
+2. 确认全部章节的 `validation.json.status` 为 `passed`
+3. 读取全部章节的 `research.json` 和 `section.json`
 4. 构建跨章节事实索引、证据链索引、来源索引、冲突清单和风险清单
 5. 合并已纳入章节的来源列表并保留章节来源编号
 6. 生成执行摘要、核心结论、跨章节洞察和建议
@@ -56,7 +55,6 @@ metadata:
 
 ## Synthesis Rules
 - 只使用已保存且校验通过的章节、来源、事实和证据链
-- 非必需章节只有在章节文件和章节校验都已完成且通过时才能纳入综合结果
 - 不得新增 `research.json` 或 `section.json` 中不存在的事实、来源或证据链
 - 综合结论必须能回溯到章节证据链
 - 跨章节洞察必须列出关联章节
@@ -146,7 +144,7 @@ metadata:
 - `reason`、`help_needed` 和 `suggested_action` 必须指明缺失章节、断裂引用或无法合并的来源对象
 
 ## Handoff Rules
-- 任一必需章节未通过校验、缺少输入文件、全局引用断裂或来源列表无法合并时，不得继续组装最终结果
+- 任一章节未通过校验、缺少输入文件、全局引用断裂或来源列表无法合并时，不得继续组装最终结果
 - 能形成完整、可校验的 `synthesis.json` 和 `research_result.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
 - 需要返工、补齐章节、补齐来源信息或用户判断时，整理统一反馈对象
 - 在 Kanban 任务上下文内：
@@ -158,7 +156,7 @@ metadata:
 - 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-lead` 在当前会话中向用户提问
 
 ## Verification
-- 所有必需章节的章节校验均为通过状态
+- 所有章节的章节校验均为通过状态
 - 全局来源列表已合并章节来源并保留原章节来源编号
 - 全局事实引用的 `source_ids` 存在
 - 全局证据链引用的 `fact_ids` 和 `source_ids` 存在

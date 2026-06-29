@@ -1,6 +1,6 @@
 ---
 name: deepresearch-searcher
-description: 深度研究章节检索技能。用于 searcher profile 根据章节任务执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，生成 research.json、来源评估、事实、证据链、冲突、风险和证据缺口反馈
+description: 深度研究章节检索技能。用于 searcher profile 根据章节任务执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，完成来源评估、事实抽取、证据链整理、冲突与风险记录，并在需要时反馈证据缺口
 version: 1.0.0
 metadata:
   hermes:
@@ -42,7 +42,6 @@ metadata:
   - `objective`
   - `key_questions`
   - `evidence_requirements`
-  - `required`
 - 读取全局：
   - `scope`
   - `search_strategy`
@@ -81,7 +80,7 @@ metadata:
 - 事实文本必须足够具体，能够被 `source_ids` 回溯验证
 - `source_id` 在章节内唯一，格式为 `src-<section_id>-NNN`
 - `conflict_id`、`risk_id` 和 `gap_id` 在章节内唯一
-- 缺少足够证据时可以保存带 `gaps` 的 `research.json`，但不得把证据缺口伪装成已满足的证据要求
+- 存在未满足的关键问题或证据要求时，可以先保存带 `gaps` 的 `research.json`，但不得把当前任务标记为成功
 
 ## research.json
 - `section_id`：章节编号，格式为 `sNNN`
@@ -150,8 +149,8 @@ metadata:
 
 ## Handoff Rules
 - 缺少必需输入、章节不存在、研究范围冲突或无法访问必需来源时，不得伪造输出
-- 能形成完整、可校验的 `research.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
-- 需要追加资料、追加检索、用户判断或上游修正时，整理统一反馈对象
+- 关键问题和证据要求已满足，且能形成完整、可校验的 `research.json` 时，先保存文件，再在 Kanban 任务上下文内完成当前任务
+- 存在证据缺口、关键问题未覆盖、需要追加资料、追加检索、用户判断或上游修正时，整理统一反馈对象
 - 在 Kanban 任务上下文内：
   - 能保存当前已成立的 `research.json` 时先保存
   - 再记录反馈

@@ -2066,29 +2066,28 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 多源：支持公开网页、指定来源、上传文件、内部知识库、数据库和外部 API
 - 追溯：来源、事实、证据链、冲突和风险结构化保存
 - 重跑：章节级独立执行和返工，可单章重跑
-- 交付：基于结构化研究结果生成可版本化 HTML 报告
+- 交付：基于研究结果生成 HTML 报告
 
 ## 17.2 角色规划
 - `research-lead`：在会话中接收需求、确认研究边界、生成研究方案、创建与巡检 Kanban 任务、处理 blocked 任务、协调返工、交付汇总
 - `searcher`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
 - `writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
 - `reviewer`：章节校验、结果校验、证据引用检查、未完成内容检查和返工建议
-- `synthesizer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源合并并组装结构化研究结果
-- `renderer`：基于结构化研究结果生成 HTML
+- `synthesizer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源合并并组装研究结果
+- `renderer`：基于研究结果生成 HTML
 
 ## 17.3 流程与任务图
-1. 用户直接在 `research-lead` 会话中提交研究需求
-2. `research-lead` 通过交互式、渐进式、循环式对话确认必要研究边界，生成研究方案
+1. 用户向 `research-lead` 提出研究需求
+2. `research-lead` 通过交互对话确认必要研究边界，生成研究方案
 3. 用户确认或修改研究方案
-4. `research-lead` 创建项目 workspace，并一次创建完整任务图和依赖关系
+4. `research-lead` 创建项目 workspace，并创建完整任务图和依赖关系
 5. 各 worker 任务以单任务方式运行；成功时完成当前任务，遇到问题时阻塞当前任务，并在任务评论中写明原因、影响范围、所需帮助和建议动作
-6. `research-lead` 按 `project.json.monitoring.next_poll_at` 定期查看当前项目的 Kanban 任务；对 blocked 任务决定补充输入、更新方案、解除阻塞、追加返工任务或调整依赖关系
-7. 每个章节按搜索与证据整理、章节写作、章节校验的顺序推进；综合、结果校验和报告渲染任务在首次创建任务图时就已建立依赖关系
-8. 全部上游依赖完成后，综合、结果校验和报告渲染任务按依赖关系自动推进
-9. `synthesizer` 生成综合结果和结构化研究结果，`reviewer` 校验结构化研究结果
-10. `research-lead` 继续按节流规则查看任务；结果阶段遇到 blocked 任务时，按同样方式处理
-11. `renderer` 渲染 HTML 报告
-12. `research-lead` 读取报告产物，向用户汇总结果并完成本轮研究交付
+6. `searcher` 先为每个章节完成搜索与证据整理，`writer` 再写章节内容，`reviewer` 最后完成章节校验
+7. 全部章节通过校验后，`synthesizer` 汇总章节结果，生成 `synthesis/synthesis.json` 和 `result/research_result.json`
+8. `synthesizer` 完成后，`reviewer` 对 `result/research_result.json` 执行结果校验
+9. 结果校验通过后，`renderer` 生成 HTML 报告
+10. `research-lead` 读取报告产物，向用户汇总结果并完成本轮研究交付
+11. 从完整任务图创建完成到研究交付前，`research-lead` 在当前会话内默认每 180 秒查看一次当前项目的 Kanban 任务；无状态变化时在两轮之间 `sleep 180` 秒；对 `blocked` 任务决定补充输入、更新方案、解除阻塞、追加返工任务或调整依赖关系
 
 ```text
 human：提出研究需求
@@ -2116,10 +2115,10 @@ reviewer：校验章节 1                 reviewer：校验章节 2
   +-----------------------------------+
   |
   v
-synthesizer：综合研究结果并组装结构化研究结果
+synthesizer：综合研究结果并生成 research_result.json
   |
   v
-reviewer：校验结构化研究结果
+reviewer：校验 research_result.json
   |
   v
 renderer：渲染报告
@@ -2128,7 +2127,7 @@ renderer：渲染报告
 research-lead：交付汇总与用户回复
 ```
 
-任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-lead` 在当前会话中按节流规则定期查看并处理这些任务。
+任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-lead` 在当前会话中默认每 180 秒查看并处理这些任务；无状态变化时，在当前会话内默认 `sleep 180` 秒。
 
 ## 17.4 workspace 目录
 使用固定的项目总目录 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch`。
@@ -2151,7 +2150,7 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
   synthesis/
     synthesis.json              # 执行摘要、核心结论、跨章节洞察、建议和全局风险
   result/
-    research_result.json        # 报告渲染前的完整结构化研究结果
+    research_result.json        # 报告渲染前的最终研究结果文件
     validation.json             # research_result.json 校验结果
   reports/
     index.json                  # 报告版本索引、当前版本编号和版本说明
@@ -2199,7 +2198,7 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 每个任务必须包含 `project_id`、`workspace_path`、`task_type`、`assignee`、`skills`、`inputs`、`outputs`、`objective`、`constraints`、`acceptance_criteria` 和 `attempt`
     - 研究方案确认后一次创建完整任务图
     - 章节任务依赖链固定为 `search -> section_write -> section_review`
-    - 综合任务依赖全部必需章节的 `section_review`
+    - 综合任务依赖全部章节的 `section_review`
     - 结果校验任务依赖 `synthesis`
     - 报告渲染任务依赖 `result_review`
     - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 worker profile 的专属 skill
@@ -2215,22 +2214,23 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
   - 输入：当前项目的 Kanban 任务、状态变化任务评论、状态变化任务产物、用户补充信息
   - 输出：项目进度状态、blocked 任务清单、更新后的项目文件
   - 步骤：
-    - 检查 `project.json.monitoring.next_poll_at`
-    - 到达巡检时间后查看当前项目的 `done`、`running`、`ready`、`todo` 和 `blocked` 任务
+    - 读取 `project.json.monitoring`
+    - 查看当前项目的 `done`、`running`、`ready`、`todo` 和 `blocked` 任务
     - 对已通过的章节校验结果登记章节通过状态
     - 检查综合、结果校验和报告渲染任务是否按依赖正常推进
     - 更新 `project.json.stage`
     - 更新 `project.json.monitoring`
   - 执行规则：
-    - 常规巡检间隔为 180 秒
+    - 默认常规巡检间隔为 180 秒
     - 周期巡检只负责查看和记录任务推进情况，不为正常成功路径创建新任务
+    - 周期巡检在当前会话里通过 `sleep 180` 控制两轮之间的等待时间
     - `project.json.stage` 必须与当前主阶段一致
     - 完整任务图创建完成后持续巡检，直到交付完成或用户明确暂停、停止项目
-    - 当前时间早于 `project.json.monitoring.next_poll_at` 且没有用户补充信息时，不读取 Kanban 任务列表
     - 每轮常规巡检最多读取一次任务列表
     - 常规巡检只展开读取状态变化任务、`blocked` 任务和报告交付相关任务的评论与产物
-    - 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，只更新 `next_poll_at` 和状态摘要
-    - 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，等待到 `next_poll_at` 后再执行下一轮常规巡检
+    - 章节校验通过后，将对应 `section_id` 写入 `project.json.monitoring.passed_section_ids`
+    - 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，只更新状态摘要
+    - 无状态变化且仍有 `running`、`ready` 或 `todo` 任务时，在当前会话内默认 `sleep 180` 秒，再执行下一轮常规巡检
     - 无状态变化时不得立即进入下一轮常规巡检
     - 无状态变化时不得结束项目监督
     - 发现 `blocked` 任务后立即进入 blocked 处理，不等待用户再次提醒
@@ -2279,10 +2279,8 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
 - `stage`：当前研究业务阶段，取值为 `preparing`、`dispatching`、`searching`、`writing`、`reviewing`、`synthesizing`、`validating`、`rendering`、`delivering`、`completed`
 - `current_report_version`：当前报告版本，取值为 `null` 或 `vNNN`
 - `monitoring`：巡检状态
-  - `poll_interval_seconds`：常规巡检间隔，固定为 `180`
-  - `next_poll_at`：下一次常规巡检时间，使用 ISO 8601 字符串
+  - `passed_section_ids`：已通过章节校验的章节编号列表
   - `last_seen_task_status_digest`：上一轮任务状态摘要
-  - `last_poll_at`：上一轮实际巡检时间，使用 ISO 8601 字符串
 
 `scheme.json` 字段：
 - `research_goal`：研究目标和最终需要回答的问题
@@ -2298,7 +2296,6 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
   - `objective`：章节目标
   - `key_questions`：本章必须回答的关键问题
   - `evidence_requirements`：本章证据要求
-  - `required`：是否为必需章节，取值为 `true` 或 `false`
 - `deliverables`：最终交付内容，包括 HTML 报告、执行摘要、表格、图表和数据附录
 - `acceptance_criteria`：验收标准，包括问题覆盖、证据链完整性、引用有效性和格式要求
 - `risk_boundary`：输出结论时必须说明的限制、不确定性和适用边界
@@ -2372,12 +2369,12 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
     - `sections/<section_id>/research.json` 包含候选来源、可引用来源、来源评估、可复核事实、证据链、冲突信息和风险说明
     - 候选来源必须记录检索渠道、原始标题、URL 或文档编号、摘要片段和召回信息
     - 公开网页候选来源必须记录最终 URL
-    - 内部知识库候选来源必须记录数据集和片段定位
+    - 内部知识库候选来源必须记录文档编号和片段定位
     - 可引用来源必须包含章节内唯一来源编号、标题、URL 或文档编号、发布时间、来源类型和摘要
     - 来源评估必须记录可信度、相关性、时效性、偏差风险和可用事实
     - 可复核事实不保存大段原文
     - 不得用低可信来源填补关键证据缺口
-    - 当前任务成功时先保存 `sections/<section_id>/research.json`，再完成当前任务
+    - 关键问题和证据要求已满足时，当前任务成功时先保存 `sections/<section_id>/research.json`，再完成当前任务
     - 检索或证据不足时，先保存当前已成立的 `sections/<section_id>/research.json`，再使用统一反馈格式记录缺口并阻塞当前任务
     - 需要用户判断时，由 `research-lead` 在当前会话中向用户提问
     - 不创建返工任务或下游任务
@@ -2542,7 +2539,7 @@ cp -R deepresearch/skills/deepresearch-writer ~/.hermes/profiles/writer/skills/r
     - 证据链引用的 `source_id` 必须存在
     - 公开来源必须提供 HTTP URL
     - 内部知识库来源必须标记来源类型
-    - 缺少必需输入文件、必需章节数据、引用断裂或内容未完成时，且不需要用户判断，校验状态记为 `failed`
+    - 缺少输入文件、章节数据、引用断裂或内容未完成时，且不需要用户判断，校验状态记为 `failed`
     - 只有需要用户判断或外部授权时，校验状态记为 `blocked`
     - 校验通过时先保存 `sections/<section_id>/validation.json`，再完成当前任务
     - 校验失败时，先保存 `sections/<section_id>/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
@@ -2559,9 +2556,9 @@ cp -R deepresearch/skills/deepresearch-writer ~/.hermes/profiles/writer/skills/r
     - 生成校验结果和返工反馈
   - 执行规则：
     - 所有需要正文的章节都已保存
-    - 所有必需章节校验已通过
+    - 所有章节校验已通过
     - 报告渲染输入不包含未完成内容或占位符
-    - 缺少必需输入文件、缺少必需章节校验文件、引用断裂或存在未完成内容时，且不需要用户判断，校验状态记为 `failed`
+    - 缺少输入文件、缺少章节校验文件、引用断裂或存在未完成内容时，且不需要用户判断，校验状态记为 `failed`
     - 只有需要用户判断或外部授权时，校验状态记为 `blocked`
     - 校验通过时先保存 `result/validation.json`，再完成当前任务
     - 校验失败时，先保存 `result/validation.json`，再通过 Kanban 评论记录返工反馈并阻塞当前任务
@@ -2620,7 +2617,7 @@ cp -R deepresearch/skills/deepresearch-reviewer ~/.hermes/profiles/reviewer/skil
 
 ## 17.9 `synthesizer`
 ### 17.9.1 职责
-负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，合并章节来源，并把所有章节、来源、证据和综合结果组装为 `result/research_result.json`
+负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，合并章节来源，并组装研究结果
 
 ### 17.9.2 依赖
 - Toolsets：`file`
@@ -2637,7 +2634,7 @@ cp -R deepresearch/skills/deepresearch-reviewer ~/.hermes/profiles/reviewer/skil
     - 组装 `result/research_result.json`
   - 执行规则：
     - 只使用已保存的章节、来源、事实和证据链
-    - 非必需章节只有在章节文件和章节校验都已完成且通过时才能纳入综合结果
+    - 只使用章节文件和章节校验都已完成且通过的章节
     - 综合结论必须能回溯到章节证据链
     - 建议必须包含适用条件和风险前提
     - 跨章节冲突必须保留冲突说明
@@ -2647,7 +2644,7 @@ cp -R deepresearch/skills/deepresearch-reviewer ~/.hermes/profiles/reviewer/skil
     - 不得新增事实、来源、判断或证据链
     - `result/research_result.json.sections` 按 `scheme.json.outline` 的章节顺序输出
     - 当前任务成功时先保存 `synthesis/synthesis.json` 和 `result/research_result.json`，再完成当前任务
-    - 必需章节未通过校验、缺少输入文件或全局引用断裂时，使用统一反馈格式记录问题并阻塞当前任务
+    - 任一章节未通过校验、缺少输入文件或全局引用断裂时，使用统一反馈格式记录问题并阻塞当前任务
     - 需要用户判断时，由 `research-lead` 在当前会话中向用户提问
 
 ### 17.9.4 文件格式
@@ -2712,13 +2709,13 @@ cp -R deepresearch/skills/deepresearch-reviewer ~/.hermes/profiles/reviewer/skil
 
 ### 17.9.5 Profile 配置
 ```bash
-hermes profile create synthesizer --clone --description "综合编辑：负责跨章节综合、全局来源合并、全局风险整理和结构化研究结果组装"
+hermes profile create synthesizer --clone --description "综合编辑：负责跨章节综合、全局来源合并、全局风险整理和研究结果组装"
 cp -R deepresearch/skills/deepresearch-synthesizer ~/.hermes/profiles/synthesizer/skills/research/
 ```
 
 ## 17.10 `renderer`
 ### 17.10.1 职责
-负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录
+负责基于研究结果确定性生成 HTML 报告和报告版本记录
 
 ### 17.10.2 依赖
 - Toolsets：`file`
@@ -2771,7 +2768,7 @@ cp -R deepresearch/skills/deepresearch-synthesizer ~/.hermes/profiles/synthesize
 
 ### 17.10.5 Profile 配置
 ```bash
-hermes profile create renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
+hermes profile create renderer --clone --description "报告制作编辑：负责基于研究结果确定性生成 HTML 报告和报告版本记录"
 cp -R deepresearch/skills/deepresearch-renderer ~/.hermes/profiles/renderer/skills/research/
 ```
 

@@ -1,6 +1,6 @@
 ---
 name: deepresearch-renderer
-description: 深度研究报告渲染技能。用于 renderer profile 在结果校验通过后读取 project.json 和 research_result.json，确定性生成 current.html、vNNN.html、reports/index.json，并更新 project.json.current_report_version
+description: 深度研究报告渲染技能。用于 renderer profile 在结果校验通过后读取项目与研究结果，确定性生成 HTML 报告、报告版本记录，并更新当前报告版本
 version: 1.0.0
 metadata:
   hermes:
@@ -12,7 +12,7 @@ metadata:
 # DeepResearch Report
 ## Role
 - 你是报告制作编辑
-- 你负责把已校验的结构化研究结果渲染为 HTML 报告
+- 你负责把已校验的研究结果渲染为 HTML 报告
 - 你不直接向用户提问，也不创建返工任务
 
 ## Before Starting

@@ -1,0 +1,15 @@
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    network_mode: host
+    volumes:
+      - open-webui:/app/backend/data
+    environment:
+      - OPENAI_API_BASE_URL=http://host.docker.internal:8643/v1
+      - OPENAI_API_KEY=123123
+      - ENABLE_OLLAMA_API=false
+    restart: always
+
+volumes:
+  open-webui:

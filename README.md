@@ -904,13 +904,13 @@ Gateway 常用挂载点：
 
 1. 创建脚本目录并复制脚本：
 
-使用仓库中的 [scripts/hooks/conversation-end-popup.py](scripts/hooks/conversation-end-popup.py) 和 [scripts/hooks/mac-toast.swift](scripts/hooks/mac-toast.swift)。Windows / WSL 使用 PowerShell 弹窗，macOS 使用同目录的 `mac-toast` helper。
+使用仓库中的 [scripts/hooks/agent-notify.py](scripts/hooks/agent-notify.py) 和 [scripts/hooks/mac-toast.swift](scripts/hooks/mac-toast.swift)。Windows / WSL 使用 PowerShell 弹窗，macOS 使用同目录的 `mac-toast` helper。
 
 ```bash
 mkdir -p ~/.hermes/agent-hooks
-cp scripts/hooks/conversation-end-popup.py ~/.hermes/agent-hooks/
+cp scripts/hooks/agent-notify.py ~/.hermes/agent-hooks/
 cp scripts/hooks/mac-toast.swift ~/.hermes/agent-hooks/
-chmod +x ~/.hermes/agent-hooks/conversation-end-popup.py
+chmod +x ~/.hermes/agent-hooks/agent-notify.py
 ```
 
 2. 注册 shell hook：
@@ -919,21 +919,21 @@ chmod +x ~/.hermes/agent-hooks/conversation-end-popup.py
 # ~/.hermes/config.yaml
 hooks:
   on_session_end:
-    - command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 完成"
+    - command: "~/.hermes/agent-hooks/agent-notify.py --message 完成"
       timeout: 10
   pre_approval_request:
-    - command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 请求批准"
+    - command: "~/.hermes/agent-hooks/agent-notify.py --message 请求批准"
       timeout: 10
   post_tool_call:
     - matcher: "clarify"
-      command: "~/.hermes/agent-hooks/conversation-end-popup.py --message 澄清"
+      command: "~/.hermes/agent-hooks/agent-notify.py --message 澄清"
       timeout: 10
 ```
 
 3. 测试脚本：
 
 ```bash
-printf '{}' | ~/.hermes/agent-hooks/conversation-end-popup.py --message 完成
+printf '{}' | ~/.hermes/agent-hooks/agent-notify.py --message 完成
 ```
 
 首次运行时 Hermes 会询问是否允许这个 `(event, command)` 组合。

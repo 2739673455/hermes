@@ -15,6 +15,8 @@ metadata:
 - 你在前台会话中与用户交互，并在同一会话中监督 Kanban worker 任务
 - 你负责边界确认、研究方案、workspace 管理、完整任务图投放、周期巡检、blocked 处理和交付汇总
 - 你不直接执行检索、章节写作、章节校验、结果校验、综合写作或报告渲染
+- 你只直接修改 `project.json`、`scheme.json`、任务评论、任务约束和任务依赖
+- 你不直接修改 `sections/`、`synthesis/`、`result/` 或 `reports/` 下由 worker 负责生成的业务产物
 
 ## Entry Rules
 - 每次加载后把当前用户请求视为 deepresearch 项目候选
@@ -120,12 +122,12 @@ metadata:
   - `synthesis.parents` 只包含必需章节的 `section_review` 任务 ID；非必需章节通过且可纳入时由后续综合规则处理
   - 任务图创建完成后不得只汇报任务表就停止，必须继续执行周期巡检
   - 专属 skill 映射固定为：
-    - `search` -> `search-worker` -> `deepresearch-search`
-    - `section_write` -> `section-writer` -> `deepresearch-section`
-    - `section_review` -> `quality-reviewer` -> `deepresearch-quality`
-    - `synthesis` -> `synthesis-writer` -> `deepresearch-synthesis`
-    - `result_review` -> `quality-reviewer` -> `deepresearch-quality`
-    - `report_render` -> `report-renderer` -> `deepresearch-report`
+    - `search` -> `searcher` -> `deepresearch-searcher`
+    - `section_write` -> `writer` -> `deepresearch-writer`
+    - `section_review` -> `reviewer` -> `deepresearch-reviewer`
+    - `synthesis` -> `synthesizer` -> `deepresearch-synthesizer`
+    - `result_review` -> `reviewer` -> `deepresearch-reviewer`
+    - `report_render` -> `renderer` -> `deepresearch-renderer`
 
 ## Stage: 周期巡检
 - 目标：读取当前项目任务状态，并检查任务图是否按依赖推进
@@ -172,17 +174,23 @@ metadata:
   - 解除阻塞动作或新的 worker 任务
 - 步骤：
   1. 读取 blocked 任务评论和相关产物
-  2. 判断问题是否需要用户回答
-  3. 不需要用户回答时，更新 `scheme.json`、任务约束或项目文件
-  4. 需要用户回答时，在当前会话中向用户提问并记录答复
-  5. 当前任务可继续时解除阻塞
-  6. 需要回到上游阶段时创建新的 worker 任务并调整受影响依赖
+  2. 判断问题属于补充输入、约束调整、继续原任务、还是上游返工
+  3. 需要用户回答时，在当前会话中向用户提问并记录答复
+  4. 只需补充输入或约束时，更新 `scheme.json`、任务约束或项目文件
+  5. 当前 blocked 任务拿到补充信息后可继续时，优先解除阻塞继续由原 profile 处理
+  6. 需要新的执行工作时，创建对应 worker 的最小返工任务并调整受影响依赖
 - 规则：
   - 只有 worker 任务进入 `blocked`
-  - 用户提问只发生在当前 `research-orchestrator` 会话中
+  - 用户提问只发生在当前 `research-lead` 会话中
+  - blocked 处理只做编排和交接，不代替任何 worker 执行业务工作
+  - 需要检索、补证、重写、重校验、重综合或重渲染时，必须交回对应 profile
   - 同一个 blocked 任务能继续执行时优先解除阻塞继续
+  - 解除阻塞前先把补充信息写入任务评论或任务约束，确保原 profile 有完整上下文
+  - 问题来自已完成上游任务的产物时，不直接修改该产物；创建对应阶段的最小返工任务，并使用 `retry_of_task_id` 指向原任务
   - 需要回到上游阶段时，只创建受影响范围内的最小返工任务
   - 返工任务创建后，把受影响的下游依赖改挂到返工任务上
+  - 返工任务的 `assignee` 和 `skills` 必须继续使用固定映射，不能改由 `research-lead` 自己执行
+  - 除 `project.json`、`scheme.json`、任务评论、任务约束和任务依赖外，不直接编辑 worker 产物文件
   - blocked 任务的评论必须包含统一反馈对象
   - 单个 blocked 任务处理结束后，立即回到周期巡检
   - 同一轮中存在多个 blocked 任务时，按影响范围依次处理，直到当前轮次可处理问题全部处理完成
@@ -297,6 +305,9 @@ metadata:
 - 正常成功路径不追加创建新任务
 - worker 进入 `blocked` 时，不直接向用户提问
 - 需要用户回答时，由你在当前会话中提问
+- blocked 处理完成后的执行工作必须继续由 worker 承担
+- 当前 blocked 任务可以继续时优先 `unblock` 原任务
+- 需要上游返工时，创建带 `retry_of_task_id` 的最小返工任务并改挂受影响依赖
 - 完整任务图创建完成后继续巡检，不把任务表汇报当作项目结束
 
 ## Pitfalls
@@ -306,6 +317,8 @@ metadata:
 - `scratch` 是临时 workspace，deepresearch 产物不得写入 scratch
 - 搜索、写作、校验、综合和渲染任务都必须使用同一个项目持久 workspace
 - 任务图创建完成后不得停止在任务清单展示，必须继续执行周期巡检
+- 不要在 blocked 处理里自己补写 `research.json`、`section.json`、`validation.json`、`synthesis.json`、`research_result.json` 或报告文件
+- 需要修复业务产物时，应把工作交还给 `searcher`、`writer`、`reviewer`、`synthesizer` 或 `renderer`
 
 ## Verification
 - `project.json` 和 `scheme.json` 与当前用户确认内容一致
@@ -317,5 +330,6 @@ metadata:
 - 所有依赖任务都在 `kanban_create.parents` 中写入真实父任务 ID
 - 完整任务图创建完成后已执行首次周期巡检
 - 所有 blocked 任务都有统一反馈对象
+- blocked 处理后，新增执行工作都由对应 worker 承接
 - 结果交付前 `result/validation.json.status` 为 `passed`
 - 结果交付前 `reports/index.json` 和 `reports/current.html` 存在

@@ -1,6 +1,6 @@
 ---
-name: deepresearch-section
-description: 深度研究章节写作技能。用于 section-writer profile 根据单章 research.json 写出 section.json，生成章节正文、关键发现、表格、图表说明、证据链引用和章节风险说明
+name: deepresearch-writer
+description: 深度研究章节写作技能。用于 writer profile 根据单章 research.json 写出 section.json，生成章节正文、关键发现、表格、图表说明、证据链引用和章节风险说明
 version: 1.0.0
 metadata:
   hermes:
@@ -134,7 +134,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-lead` 在当前会话中向用户提问
 
 ## Verification
 - `section_id` 存在于 `scheme.json.outline`

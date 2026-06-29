@@ -1,6 +1,6 @@
 ---
-name: deepresearch-report
-description: 深度研究报告渲染技能。用于 report-renderer profile 在结果校验通过后读取 project.json 和 research_result.json，确定性生成 current.html、vNNN.html、reports/index.json，并更新 project.json.current_report_version
+name: deepresearch-renderer
+description: 深度研究报告渲染技能。用于 renderer profile 在结果校验通过后读取 project.json 和 research_result.json，确定性生成 current.html、vNNN.html、reports/index.json，并更新 project.json.current_report_version
 version: 1.0.0
 metadata:
   hermes:
@@ -128,7 +128,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-lead` 在当前会话中向用户提问
 
 ## Verification
 - `result/validation.json.status` 为 `passed`

@@ -2069,71 +2069,71 @@ hermes dashboard &>/dev/null & disown  # 后台运行 Dashboard 并脱离终端
 - 交付：基于结构化研究结果生成可版本化 HTML 报告
 
 ## 17.2 角色规划
-- `research-orchestrator`：在会话中接收需求、确认研究边界、生成研究方案、创建与巡检 Kanban 任务、处理 blocked 任务、协调返工、交付汇总
-- `search-worker`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
-- `section-writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
-- `quality-reviewer`：章节校验、结果校验、证据引用检查、未完成内容检查和返工建议
-- `synthesis-writer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源合并并组装结构化研究结果
-- `report-renderer`：基于结构化研究结果生成 HTML
+- `research-lead`：在会话中接收需求、确认研究边界、生成研究方案、创建与巡检 Kanban 任务、处理 blocked 任务、协调返工、交付汇总
+- `searcher`：执行检索、来源去重、可信度评估、事实抽取、冲突识别、证据链整理和风险记录
+- `writer`：章节正文、关键发现、表格、图表、证据链和章节风险写作
+- `reviewer`：章节校验、结果校验、证据引用检查、未完成内容检查和返工建议
+- `synthesizer`：汇总执行摘要、核心结论、跨章节洞察、建议、全局风险、全局来源合并并组装结构化研究结果
+- `renderer`：基于结构化研究结果生成 HTML
 
 ## 17.3 流程与任务图
-1. 用户直接在 `research-orchestrator` 会话中提交研究需求
-2. `research-orchestrator` 通过交互式、渐进式、循环式对话确认必要研究边界，生成研究方案
+1. 用户直接在 `research-lead` 会话中提交研究需求
+2. `research-lead` 通过交互式、渐进式、循环式对话确认必要研究边界，生成研究方案
 3. 用户确认或修改研究方案
-4. `research-orchestrator` 创建项目 workspace，并一次创建完整任务图和依赖关系
+4. `research-lead` 创建项目 workspace，并一次创建完整任务图和依赖关系
 5. 各 worker 任务以单任务方式运行；成功时完成当前任务，遇到问题时阻塞当前任务，并在任务评论中写明原因、影响范围、所需帮助和建议动作
-6. `research-orchestrator` 按 `project.json.monitoring.next_poll_at` 定期查看当前项目的 Kanban 任务；对 blocked 任务决定补充输入、更新方案、解除阻塞、追加返工任务或调整依赖关系
+6. `research-lead` 按 `project.json.monitoring.next_poll_at` 定期查看当前项目的 Kanban 任务；对 blocked 任务决定补充输入、更新方案、解除阻塞、追加返工任务或调整依赖关系
 7. 每个章节按搜索与证据整理、章节写作、章节校验的顺序推进；综合、结果校验和报告渲染任务在首次创建任务图时就已建立依赖关系
 8. 全部上游依赖完成后，综合、结果校验和报告渲染任务按依赖关系自动推进
-9. `synthesis-writer` 生成综合结果和结构化研究结果，`quality-reviewer` 校验结构化研究结果
-10. `research-orchestrator` 继续按节流规则查看任务；结果阶段遇到 blocked 任务时，按同样方式处理
-11. `report-renderer` 渲染 HTML 报告
-12. `research-orchestrator` 读取报告产物，向用户汇总结果并完成本轮研究交付
+9. `synthesizer` 生成综合结果和结构化研究结果，`reviewer` 校验结构化研究结果
+10. `research-lead` 继续按节流规则查看任务；结果阶段遇到 blocked 任务时，按同样方式处理
+11. `renderer` 渲染 HTML 报告
+12. `research-lead` 读取报告产物，向用户汇总结果并完成本轮研究交付
 
 ```text
 human：提出研究需求
   |
   v
-research-orchestrator：确认边界并生成研究方案
+research-lead：确认边界并生成研究方案
   |
   v
 human：确认研究方案
   |
   v
-research-orchestrator：创建 workspace 和完整任务图
+research-lead：创建 workspace 和完整任务图
   |
   +-----------------------------------+
   |                                   |
   v                                   v
-search-worker：搜索并整理章节 1 信息    search-worker：搜索并整理章节 2 信息
+searcher：搜索并整理章节 1 信息        searcher：搜索并整理章节 2 信息
   |                                   |
   v                                   v
-section-writer：写作章节 1            section-writer：写作章节 2
+writer：写作章节 1                   writer：写作章节 2
   |                                   |
   v                                   v
-quality-reviewer：校验章节 1          quality-reviewer：校验章节 2
+reviewer：校验章节 1                 reviewer：校验章节 2
   |                                   |
   +-----------------------------------+
   |
   v
-synthesis-writer：综合研究结果并组装结构化研究结果
+synthesizer：综合研究结果并组装结构化研究结果
   |
   v
-quality-reviewer：校验结构化研究结果
+reviewer：校验结构化研究结果
   |
   v
-report-renderer：渲染报告
+renderer：渲染报告
   |
   v
-research-orchestrator：交付汇总与用户回复
+research-lead：交付汇总与用户回复
 ```
 
-任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-orchestrator` 在当前会话中按节流规则定期查看并处理这些任务。
+任一 worker 任务遇到问题时，先把统一反馈对象写入任务评论，再把当前任务置为 `blocked`；`research-lead` 在当前会话中按节流规则定期查看并处理这些任务。
 
 ## 17.4 workspace 目录
 使用固定的项目总目录 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch`。
 
-`research-orchestrator` 在研究方案确认后创建项目目录；未显式指定项目总目录时，使用 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch`。
+`research-lead` 在研究方案确认后创建项目目录；未显式指定项目总目录时，使用 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch`。
 
 每个研究项目在项目总目录下创建目录 `$HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/`，`project_id` 使用 `dr-YYYYMMDD-HHMMSS-<slug>` 格式。`slug` 从研究目标生成，只使用小写字母、数字和连字符，最长 48 个字符。
 
@@ -2160,9 +2160,13 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
     v002.html                   # 第 2 版 HTML 报告
 ```
 
-## 17.5 `research-orchestrator`
+## 17.5 `research-lead`
 ### 17.5.1 职责
 负责研究项目入口、边界确认、方案生成、workspace 管理、Kanban 任务创建、周期巡检、blocked 处理和交付汇总
+
+直接修改范围只包括 `project.json`、`scheme.json`、任务评论、任务约束和任务依赖。
+
+不直接修改 `sections/`、`synthesis/`、`result/` 或 `reports/` 下由 worker 负责生成的业务产物。
 
 ### 17.5.2 依赖
 - Toolsets：`file`、`kanban`、`terminal`
@@ -2200,12 +2204,12 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
     - 报告渲染任务依赖 `result_review`
     - 每个 worker 任务必须在 `kanban_create.skills` 中写入对应 worker profile 的专属 skill
     - 专属 skill 映射固定为：
-      - `search` -> `search-worker` -> `deepresearch-search`
-      - `section_write` -> `section-writer` -> `deepresearch-section`
-      - `section_review` -> `quality-reviewer` -> `deepresearch-quality`
-      - `synthesis` -> `synthesis-writer` -> `deepresearch-synthesis`
-      - `result_review` -> `quality-reviewer` -> `deepresearch-quality`
-      - `report_render` -> `report-renderer` -> `deepresearch-report`
+      - `search` -> `searcher` -> `deepresearch-searcher`
+      - `section_write` -> `writer` -> `deepresearch-writer`
+      - `section_review` -> `reviewer` -> `deepresearch-reviewer`
+      - `synthesis` -> `synthesizer` -> `deepresearch-synthesizer`
+      - `result_review` -> `reviewer` -> `deepresearch-reviewer`
+      - `report_render` -> `renderer` -> `deepresearch-renderer`
     - 完整任务图创建完成后，`project.json.stage` 更新为 `dispatching`
 - 周期巡检
   - 输入：当前项目的 Kanban 任务、状态变化任务评论、状态变化任务产物、用户补充信息
@@ -2236,17 +2240,23 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
   - 输出：补充约束、返工任务、调整后的依赖关系、解除阻塞动作
   - 步骤：
     - 读取 blocked 任务评论和相关产物
-    - 判断问题是否需要用户回答
-    - 不需要用户回答时，更新 `scheme.json`、任务约束或项目文件
+    - 判断问题属于补充输入、约束调整、继续原任务还是上游返工
     - 需要用户回答时，在当前会话中向用户提问并记录答复
-    - 当前任务可继续时解除阻塞
-    - 需要回到上游阶段时创建新的 worker 任务并调整受影响依赖
+    - 只需补充输入或约束时，更新 `scheme.json`、任务约束或项目文件
+    - 当前 blocked 任务拿到补充信息后可继续时，优先解除阻塞继续由原 profile 处理
+    - 需要新的执行工作时，创建对应 worker 的最小返工任务并调整受影响依赖
   - 执行规则：
     - 反馈必须使用统一反馈格式
     - 只有 worker 任务进入 `blocked`
-    - 用户提问只发生在 `research-orchestrator` 当前会话中
+    - 用户提问只发生在 `research-lead` 当前会话中
+    - blocked 处理只做编排和交接，不代替任何 worker 执行业务工作
+    - 需要检索、补证、重写、重校验、重综合或重渲染时，必须交回对应 profile
     - 同一个 blocked 任务能继续执行时优先解除阻塞继续
+    - 解除阻塞前先把补充信息写入任务评论或任务约束，确保原 profile 有完整上下文
+    - 问题来自已完成上游任务的产物时，不直接修改该产物；创建对应阶段的最小返工任务，并使用 `retry_of_task_id` 指向原任务
     - 需要重跑上游阶段时，只创建受影响范围内的最小返工任务，并把下游依赖改挂到返工任务上
+    - 返工任务的 `assignee` 和 `skills` 必须继续使用固定映射，不能改由 `research-lead` 自己执行
+    - 除 `project.json`、`scheme.json`、任务评论、任务约束和任务依赖外，不直接编辑 worker 产物文件
     - 单个 blocked 任务处理结束后立即回到周期巡检
     - 同一轮中存在多个 blocked 任务时，按影响范围依次处理
 - 交付汇总
@@ -2319,19 +2329,19 @@ $HERMES_REAL_HOME/.hermes/workspaces/deepresearch/<project_id>/
 
 ### 17.5.7 Profile 配置
 ```bash
-hermes profile create research-orchestrator --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务创建、周期巡检、blocked 处理和交付汇总"
-research-orchestrator config set toolsets '["kanban"]'
-cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-orchestrator/skills/research/
+hermes profile create research-lead --clone --description "研究项目主编：负责深度研究项目入口、边界确认、方案生成、Kanban 任务创建、周期巡检、blocked 处理和交付汇总"
+research-lead config set toolsets '["kanban"]'
+cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-lead/skills/research/
 ```
 
-## 17.6 `search-worker`
+## 17.6 `searcher`
 ### 17.6.1 职责
 负责按章节目标执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，并完成来源评估、事实抽取、冲突识别和证据链整理
 
 ### 17.6.2 依赖
 - Toolsets：`web`、`browser`、`file`
 - MCP：可选内部知识库、数据库、外部 API
-- Skills：`deepresearch-search`
+- Skills：`deepresearch-searcher`
 
 联网搜索工具集配置：
 
@@ -2369,7 +2379,7 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
     - 不得用低可信来源填补关键证据缺口
     - 当前任务成功时先保存 `sections/<section_id>/research.json`，再完成当前任务
     - 检索或证据不足时，先保存当前已成立的 `sections/<section_id>/research.json`，再使用统一反馈格式记录缺口并阻塞当前任务
-    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
+    - 需要用户判断时，由 `research-lead` 在当前会话中向用户提问
     - 不创建返工任务或下游任务
 
 ### 17.6.4 文件格式
@@ -2429,17 +2439,17 @@ cp -R deepresearch/skills/deepresearch-orchestrator ~/.hermes/profiles/research-
 
 ### 17.6.5 Profile 配置
 ```bash
-hermes profile create search-worker --clone --description "资料研究员：负责按章节目标执行检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录"
-cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/skills/research/
+hermes profile create searcher --clone --description "资料研究员：负责按章节目标执行检索、来源评估、事实抽取、冲突识别、证据链整理和风险记录"
+cp -R deepresearch/skills/deepresearch-searcher ~/.hermes/profiles/searcher/skills/research/
 ```
 
-## 17.7 `section-writer`
+## 17.7 `writer`
 ### 17.7.1 职责
 负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明
 
 ### 17.7.2 依赖
 - Toolsets：`file`
-- Skills：`deepresearch-section`
+- Skills：`deepresearch-writer`
 
 ### 17.7.3 阶段
 - 章节写作
@@ -2461,7 +2471,7 @@ cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/s
     - 未完成内容不得进入 `sections/<section_id>/section.json`
     - 当前任务成功时先保存 `sections/<section_id>/section.json`，再完成当前任务
     - 证据不足、证据链断裂或需要补充资料时，使用统一反馈格式记录问题并阻塞当前任务
-    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
+    - 需要用户判断时，由 `research-lead` 在当前会话中向用户提问
     - 不创建返工任务或下游任务
 
 ### 17.7.4 文件格式
@@ -2504,17 +2514,17 @@ cp -R deepresearch/skills/deepresearch-search ~/.hermes/profiles/search-worker/s
 
 ### 17.7.5 Profile 配置
 ```bash
-hermes profile create section-writer --clone --description "专题撰稿编辑：负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明"
-cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer/skills/research/
+hermes profile create writer --clone --description "专题撰稿编辑：负责把章节证据转成章节正文、关键发现、表格、图表说明和章节风险说明"
+cp -R deepresearch/skills/deepresearch-writer ~/.hermes/profiles/writer/skills/research/
 ```
 
-## 17.8 `quality-reviewer`
+## 17.8 `reviewer`
 ### 17.8.1 职责
 负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议
 
 ### 17.8.2 依赖
 - Toolsets：`file`
-- Skills：`deepresearch-quality`
+- Skills：`deepresearch-reviewer`
 
 ### 17.8.3 阶段
 - 章节校验
@@ -2604,17 +2614,17 @@ cp -R deepresearch/skills/deepresearch-section ~/.hermes/profiles/section-writer
 
 ### 17.8.5 Profile 配置
 ```bash
-hermes profile create quality-reviewer --clone --description "事实核查编辑：负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议"
-cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-reviewer/skills/research/
+hermes profile create reviewer --clone --description "事实核查编辑：负责章节校验、研究结果校验、证据引用检查、未完成内容检查和返工建议"
+cp -R deepresearch/skills/deepresearch-reviewer ~/.hermes/profiles/reviewer/skills/research/
 ```
 
-## 17.9 `synthesis-writer`
+## 17.9 `synthesizer`
 ### 17.9.1 职责
 负责跨章节综合，生成执行摘要、核心结论、跨章节洞察、建议和全局风险，合并章节来源，并把所有章节、来源、证据和综合结果组装为 `result/research_result.json`
 
 ### 17.9.2 依赖
 - Toolsets：`file`
-- Skills：`deepresearch-synthesis`
+- Skills：`deepresearch-synthesizer`
 
 ### 17.9.3 阶段
 - 综合与组装
@@ -2638,7 +2648,7 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
     - `result/research_result.json.sections` 按 `scheme.json.outline` 的章节顺序输出
     - 当前任务成功时先保存 `synthesis/synthesis.json` 和 `result/research_result.json`，再完成当前任务
     - 必需章节未通过校验、缺少输入文件或全局引用断裂时，使用统一反馈格式记录问题并阻塞当前任务
-    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
+    - 需要用户判断时，由 `research-lead` 在当前会话中向用户提问
 
 ### 17.9.4 文件格式
 `synthesis/synthesis.json` 字段：
@@ -2702,17 +2712,17 @@ cp -R deepresearch/skills/deepresearch-quality ~/.hermes/profiles/quality-review
 
 ### 17.9.5 Profile 配置
 ```bash
-hermes profile create synthesis-writer --clone --description "综合编辑：负责跨章节综合、全局来源合并、全局风险整理和结构化研究结果组装"
-cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-writer/skills/research/
+hermes profile create synthesizer --clone --description "综合编辑：负责跨章节综合、全局来源合并、全局风险整理和结构化研究结果组装"
+cp -R deepresearch/skills/deepresearch-synthesizer ~/.hermes/profiles/synthesizer/skills/research/
 ```
 
-## 17.10 `report-renderer`
+## 17.10 `renderer`
 ### 17.10.1 职责
 负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录
 
 ### 17.10.2 依赖
 - Toolsets：`file`
-- Skills：`deepresearch-report`
+- Skills：`deepresearch-renderer`
 
 ### 17.10.3 阶段
 - 报告渲染
@@ -2737,7 +2747,7 @@ cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-wr
     - 首次渲染时 `reports/index.json` 可以不存在，但必须在本次渲染中创建并生成 `v001`
     - 当前任务成功时先写入 HTML、`reports/index.json` 和 `project.json`，再完成当前任务
     - 结果校验未通过、`project.json` 缺失或渲染输入不完整时，使用统一反馈格式记录问题并阻塞当前任务
-    - 需要用户判断时，由 `research-orchestrator` 在当前会话中向用户提问
+    - 需要用户判断时，由 `research-lead` 在当前会话中向用户提问
 
 ### 17.10.4 文件格式
 `reports/index.json` 字段：
@@ -2761,13 +2771,13 @@ cp -R deepresearch/skills/deepresearch-synthesis ~/.hermes/profiles/synthesis-wr
 
 ### 17.10.5 Profile 配置
 ```bash
-hermes profile create report-renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
-cp -R deepresearch/skills/deepresearch-report ~/.hermes/profiles/report-renderer/skills/research/
+hermes profile create renderer --clone --description "报告制作编辑：负责基于结构化研究结果确定性生成 HTML 报告和报告版本记录"
+cp -R deepresearch/skills/deepresearch-renderer ~/.hermes/profiles/renderer/skills/research/
 ```
 
 ### 17.10.6 示例
 ```bash
-research-orchestrator chat --skills deepresearch-orchestrator
+research-lead chat --skills deepresearch-orchestrator
 
 > 深入研究下 2026 年 FIFA 男子世界杯哪支队伍最有可能夺冠，写份报告
 ```
@@ -2778,15 +2788,15 @@ https://hermes-agent.nousresearch.com/docs/user-guide/messaging/open-webui
 启动 API 服务器：
 
 ```bash
-research-orchestrator config set API_SERVER_ENABLED true
-research-orchestrator config set API_SERVER_KEY 123123
-research-orchestrator config set API_SERVER_PORT 8643
+research-lead config set API_SERVER_ENABLED true
+research-lead config set API_SERVER_KEY 123123
+research-lead config set API_SERVER_PORT 8643
 ```
 
 启用 API 服务器的 kanban 工具：
 
 ```bash
-research-orchestrator config edit
+research-lead config edit
 ```
 
 在配置中加入：
@@ -2801,7 +2811,7 @@ platform_toolsets:
 启动 Gateway：
 
 ```bash
-research-orchestrator gateway install
+research-lead gateway install
 ```
 
 验证 API 服务器是否可用：

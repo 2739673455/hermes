@@ -1,6 +1,6 @@
 ---
-name: deepresearch-synthesis
-description: 深度研究综合组装技能。用于 synthesis-writer profile 在章节校验通过后生成 synthesis.json，完成全局来源合并、跨章节洞察、建议、风险整理，并组装 result/research_result.json
+name: deepresearch-synthesizer
+description: 深度研究综合组装技能。用于 synthesizer profile 在章节校验通过后生成 synthesis.json，完成全局来源合并、跨章节洞察、建议、风险整理，并组装 result/research_result.json
 version: 1.0.0
 metadata:
   hermes:
@@ -155,7 +155,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-lead` 在当前会话中向用户提问
 
 ## Verification
 - 所有必需章节的章节校验均为通过状态

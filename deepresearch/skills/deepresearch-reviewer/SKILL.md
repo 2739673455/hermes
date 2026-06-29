@@ -1,6 +1,6 @@
 ---
-name: deepresearch-quality
-description: 深度研究质量校验技能。用于 quality-reviewer profile 执行章节校验和最终结果校验，生成 validation.json，并把失败或阻塞反馈交回 research-orchestrator
+name: deepresearch-reviewer
+description: 深度研究质量校验技能。用于 reviewer profile 执行章节校验和最终结果校验，生成 validation.json，并把失败或阻塞反馈交回 research-lead
 version: 1.0.0
 metadata:
   hermes:
@@ -149,7 +149,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象和 `status`
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-lead` 在当前会话中向用户提问
 
 ## Verification
 - 输出文件路径与任务类型一致

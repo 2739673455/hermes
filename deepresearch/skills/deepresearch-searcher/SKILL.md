@@ -1,6 +1,6 @@
 ---
-name: deepresearch-search
-description: 深度研究章节检索技能。用于 search-worker profile 根据章节任务执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，生成 research.json、来源评估、事实、证据链、冲突、风险和证据缺口反馈
+name: deepresearch-searcher
+description: 深度研究章节检索技能。用于 searcher profile 根据章节任务执行公开网页、指定站点、上传文件、内部知识库、数据库和外部 API 检索，生成 research.json、来源评估、事实、证据链、冲突、风险和证据缺口反馈
 version: 1.0.0
 metadata:
   hermes:
@@ -159,7 +159,7 @@ metadata:
 - 不在 Kanban 任务上下文内：
   - 在回复中返回同一反馈对象
   - 不额外发明新文件
-- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-orchestrator` 在当前会话中向用户提问
+- 无论哪种情况，都不直接向用户提问；需要用户判断时由 `research-lead` 在当前会话中向用户提问
 
 ## Verification
 - `section_id` 存在于 `scheme.json.outline`

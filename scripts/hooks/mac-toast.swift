@@ -1,4 +1,5 @@
 import Cocoa
+import QuartzCore
 
 let TITLE = "Hermes"
 let MESSAGE = "完成"
@@ -28,6 +29,19 @@ let TITLE_MAX_HEIGHT: CGFloat = 38
 let MESSAGE_MAX_HEIGHT: CGFloat = 68
 let TITLE_MAX_LINES = 2
 let MESSAGE_MAX_LINES = 4
+let PROGRESS_HEIGHT: CGFloat = 3
+let PROGRESS_COLOR = NSColor(
+    calibratedRed: 242.0 / 255.0,
+    green: 245.0 / 255.0,
+    blue: 247.0 / 255.0,
+    alpha: 1.0
+)
+let PROGRESS_TRACK_COLOR = NSColor(
+    calibratedRed: 74.0 / 255.0,
+    green: 79.0 / 255.0,
+    blue: 84.0 / 255.0,
+    alpha: 1.0
+)
 
 let args = CommandLine.arguments
 let toastTitle = args.count > 1 ? args[1] : TITLE
@@ -82,11 +96,23 @@ contentView.layer?.cornerRadius = CORNER_RADIUS
 contentView.layer?.masksToBounds = true
 contentView.addSubview(stack)
 
+let progressTrack = NSView()
+progressTrack.wantsLayer = true
+progressTrack.layer?.backgroundColor = PROGRESS_TRACK_COLOR.cgColor
+progressTrack.autoresizingMask = [.width, .maxYMargin]
+
+let progressBar = NSView()
+progressBar.wantsLayer = true
+progressBar.layer?.backgroundColor = PROGRESS_COLOR.cgColor
+progressBar.autoresizingMask = [.height]
+progressTrack.addSubview(progressBar)
+contentView.addSubview(progressTrack)
+
 NSLayoutConstraint.activate([
     stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: HORIZONTAL_PADDING),
     stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -HORIZONTAL_PADDING),
     stack.topAnchor.constraint(equalTo: contentView.topAnchor, constant: VERTICAL_PADDING),
-    stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -VERTICAL_PADDING),
+    stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -(VERTICAL_PADDING + PROGRESS_HEIGHT)),
 ])
 
 let fittingSize = stack.fittingSize
@@ -94,8 +120,10 @@ let windowWidth = min(
     max(fittingSize.width + (HORIZONTAL_PADDING * 2), MIN_WIDTH),
     MAX_TEXT_WIDTH + (HORIZONTAL_PADDING * 2)
 )
-let windowHeight = max(fittingSize.height + (VERTICAL_PADDING * 2), MIN_HEIGHT)
+let windowHeight = max(fittingSize.height + (VERTICAL_PADDING * 2) + PROGRESS_HEIGHT, MIN_HEIGHT)
 contentView.frame = NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight)
+progressTrack.frame = NSRect(x: 0, y: 0, width: windowWidth, height: PROGRESS_HEIGHT)
+progressBar.frame = progressTrack.bounds
 
 let window = ToastWindow(
     contentRect: NSRect(x: 0, y: 0, width: windowWidth, height: windowHeight),
@@ -112,7 +140,14 @@ window.contentView = contentView
 window.center()
 window.orderFrontRegardless()
 
-DispatchQueue.main.asyncAfter(deadline: .now() + max(0.5, toastDuration)) {
+let animationDuration = max(0.5, toastDuration)
+NSAnimationContext.runAnimationGroup({ context in
+    context.duration = animationDuration
+    context.timingFunction = CAMediaTimingFunction(name: .linear)
+    progressBar.animator().frame = NSRect(x: 0, y: 0, width: 0, height: PROGRESS_HEIGHT)
+}, completionHandler: nil)
+
+DispatchQueue.main.asyncAfter(deadline: .now() + animationDuration) {
     window.orderOut(nil)
     app.terminate(nil)
 }

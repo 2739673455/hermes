@@ -2764,7 +2764,7 @@ https://hermes-agent.nousresearch.com/docs/user-guide/messaging/open-webui
 
 ```bash
 research-lead config set API_SERVER_ENABLED true
-research-lead config set API_SERVER_KEY 123123
+research-lead config set API_SERVER_KEY 123123123123123123
 research-lead config set API_SERVER_PORT 8643
 ```
 
@@ -2795,7 +2795,7 @@ research-lead gateway install
 curl -s http://127.0.0.1:8643/health
 # {"status": "ok", ...}
 
-curl -s -H "Authorization: Bearer 123123" http://127.0.0.1:8643/v1/models
+curl -s -H "Authorization: Bearer 123123123123123123" http://127.0.0.1:8643/v1/models
 # {"object":"list","data":[{"id":"hermes-agent", ...}]}
 ```
 

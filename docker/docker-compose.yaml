@@ -2,13 +2,22 @@ services:
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
     container_name: open-webui
-    network_mode: host
     volumes:
       - open-webui:/app/backend/data
     environment:
       - OPENAI_API_BASE_URL=http://host.docker.internal:8643/v1
       - OPENAI_API_KEY=123123
       - ENABLE_OLLAMA_API=false
+
+    # Linux Docker 使用 host 网络
+    network_mode: host
+
+    # Docker Desktop 使用端口映射，并注释上面的 network_mode
+    # ports:
+    #   - "8080:8080"
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
+
     restart: always
 
 volumes:

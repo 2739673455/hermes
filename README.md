@@ -2488,22 +2488,19 @@ research-lead chat --skills deepresearch-orchestrator
 ### 18.11.1 接入 Open-WebUI
 https://hermes-agent.nousresearch.com/docs/user-guide/messaging/open-webui
 
-启动 API 服务器：
-
+#### 启动 API 服务器
 ```bash
 research-lead config set API_SERVER_ENABLED true
 research-lead config set API_SERVER_KEY 123123123123123123
 research-lead config set API_SERVER_PORT 8643
 ```
 
-启用 API 服务器的 kanban 工具：
-
+#### 启用 API 服务器的 kanban 工具
 ```bash
 research-lead config edit
 ```
 
-在配置中加入：
-
+#### 配置 API 服务器工具集
 ```yaml
 platform_toolsets:
   api_server:
@@ -2511,14 +2508,12 @@ platform_toolsets:
     - kanban
 ```
 
-启动 Gateway：
-
+#### 启动 Gateway
 ```bash
 research-lead gateway install
 ```
 
-验证 API 服务器是否可用：
-
+#### 验证 API 服务器
 ```bash
 curl -s http://127.0.0.1:8643/health
 # {"status": "ok", ...}
@@ -2527,21 +2522,18 @@ curl -s -H "Authorization: Bearer 123123123123123123" http://127.0.0.1:8643/v1/m
 # {"object":"list","data":[{"id":"hermes-agent", ...}]}
 ```
 
-启动 Open-WebUI：
-
+#### 启动 Open-WebUI
 ```bash
-cd docker
+cd docker/open-webui
 docker compose up -d
 ```
 
-访问 Open-WebUI：
-
+#### 访问 Open-WebUI
 ```text
 http://localhost:8080
 ```
 
-可选：在 Open-WebUI 中展示 Hermes 工具调用：
-
+#### 展示 Hermes 工具调用
 ```text
 点击右上角用户头像
 -> 管理员面板
@@ -2550,4 +2542,27 @@ http://localhost:8080
 -> http://localhost:8643/v1 右侧配置按钮
 -> 接口类型
 -> 点击切换 Chat Completions 和 Response
+```
+
+### 18.11.2 接入 Langfuse
+Hermes 使用内置 Langfuse 观测插件接入 Langfuse。
+
+#### 启动 Langfuse
+```bash
+cd docker/langfuse
+docker compose up -d
+```
+
+#### 启用
+```bash
+hermes tools post-setup langfuse
+```
+
+#### 配置
+编辑 `~/.hermes/.env`：
+```bash
+HERMES_LANGFUSE_PUBLIC_KEY=
+HERMES_LANGFUSE_SECRET_KEY=
+HERMES_LANGFUSE_BASE_URL=http://localhost:3000
+HERMES_LANGFUSE_DEBUG=true
 ```
